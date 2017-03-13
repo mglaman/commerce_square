@@ -1,0 +1,15 @@
+squareup:
+  remote: https://github.com/square/connect-php-sdk
+  version: VERSION
+  license:
+    name: Apache
+    url: https://github.com/square/connect-php-sdk/blob/master/LICENSE.txt
+    gpl-compatible: true
+  js:
+    https://js.squareup.com/v2/paymentform: { minified: true }
+  header: true
+
+form: 
+  version: VERSION
+  js:
+    js/commerce_squareup.form.js: {}

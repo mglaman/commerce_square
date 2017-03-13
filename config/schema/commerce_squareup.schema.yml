@@ -1,0 +1,15 @@
+commerce_payment.commerce_payment_gateway.plugin.squareup:
+  type: commerce_payment_gateway_configuration
+  mapping:
+    app_name:
+      type: string
+      label: 'Application Name'
+    app_id:
+      type: string
+      label: 'Application ID'
+    personal_access_token:
+      type: string
+      label: 'Personal Access Token'
+    location_id:
+      type string
+      label: Location ID

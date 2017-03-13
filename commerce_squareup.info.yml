@@ -1,0 +1,7 @@
+name: Commerce Squarup
+type: module
+description: 'Provides Commerce integration for Squareup Payments.'
+package: Commerce (contrib)
+core: 8.x
+dependencies:
+  - commerce_payment
