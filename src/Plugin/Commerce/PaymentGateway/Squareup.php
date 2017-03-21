@@ -25,6 +25,7 @@ use Drupal\Component\Utility\NestedArray;
  *   forms = {
  *     "add-payment-method" = "Drupal\commerce_squareup\PluginForm\Squareup\PaymentMethodAddForm",
  *   },
+ *   js_library = "commerce_squareup/square_connect",
  *   payment_method_types = {"credit_card"},
  *   credit_card_types = {
  *     "amex", "dinersclub", "discover", "jcb", "maestro", "mastercard", "visa",

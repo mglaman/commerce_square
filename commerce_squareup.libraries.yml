@@ -1,4 +1,4 @@
-squareup:
+square_connect:
   remote: https://github.com/square/connect-php-sdk
   version: VERSION
   license:
@@ -9,7 +9,12 @@ squareup:
     https://js.squareup.com/v2/paymentform: { minified: true }
   header: true
 
-form: 
+form:
   version: VERSION
   js:
     js/commerce_squareup.form.js: {}
+  dependencies:
+    - core/drupal
+    - core/drupalSettings
+    - core/jquery
+    - commerce_squareup/square_connect
