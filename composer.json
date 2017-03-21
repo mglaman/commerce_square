@@ -5,7 +5,7 @@
     "homepage": "http://drupal.org/project/commerce_squareup",
     "license": "GPL-2.0+",
     "require": {
-        "drupal/commerce": "~2.0",
-        "square/connect": "*"
+        "drupal/commerce": "^2",
+        "square/connect": "^2"
     }
 }

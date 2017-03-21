@@ -2,6 +2,14 @@
 
 namespace Drupal\commerce_squareup;
 
+use Braintree\Exception\DownForMaintenance;
+use Braintree\Exception\ServerError;
+use Braintree\Exception\TooManyRequests;
+use Braintree\Exception\UpgradeRequired;
+use Braintree\Exception\NotFound;
+use Braintree\Exception\Authorization;
+use Braintree\Exception\Authentication;
+use Braintree\Exception;
 use Drupal\commerce_payment\Exception\AuthenticationException;
 use Drupal\commerce_payment\Exception\HardDeclineException;
 use Drupal\commerce_payment\Exception\InvalidRequestException;
@@ -25,26 +33,26 @@ class ErrorHelper {
    * @throws \Drupal\commerce_payment\Exception\PaymentGatewayException
    *   The Commerce exception.
    */
-  public static function handleException(\Braintree\Exception $exception) {
-    if ($exception instanceof \Braintree\Exception\Authentication) {
+  public static function handleException(Exception $exception) {
+    if ($exception instanceof Authentication) {
       throw new AuthenticationException('Braintree authentication failed.');
     }
-    elseif ($exception instanceof \Braintree\Exception\Authorization) {
+    elseif ($exception instanceof Authorization) {
       throw new AuthenticationException('The used API key is not authorized to perform the attempted action.');
     }
-    elseif ($exception instanceof \Braintree\Exception\NotFound) {
+    elseif ($exception instanceof NotFound) {
       throw new InvalidRequestException('Braintree resource not found.');
     }
-    elseif ($exception instanceof \Braintree\Exception\UpgradeRequired) {
+    elseif ($exception instanceof UpgradeRequired) {
       throw new InvalidRequestException('The Braintree client library needs to be updated.');
     }
-    elseif ($exception instanceof \Braintree\Exception\TooManyRequests) {
+    elseif ($exception instanceof TooManyRequests) {
       throw new InvalidRequestException('Too many requests.');
     }
-    elseif ($exception instanceof \Braintree\Exception\ServerError) {
+    elseif ($exception instanceof ServerError) {
       throw new InvalidResponseException('Server error.');
     }
-    elseif ($exception instanceof \Braintree\Exception\DownForMaintenance) {
+    elseif ($exception instanceof DownForMaintenance) {
       throw new InvalidResponseException('Request timed out.');
     }
     else {
@@ -73,7 +81,7 @@ class ErrorHelper {
       // InvalidRequestException) or due to a user input error (mapped to
       // a HardDeclineException).
       $hard_decline_codes = [81813, 91828, 81736, 81737, 81750, 91568];
-      foreach($errors AS $error) {
+      foreach ($errors as $error) {
         if (in_array($error->code, $hard_decline_codes)) {
           throw new HardDeclineException($error->message, $error->code);
         }

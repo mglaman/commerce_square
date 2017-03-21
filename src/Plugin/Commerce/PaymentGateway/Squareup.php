@@ -2,6 +2,9 @@
 
 namespace Drupal\commerce_squareup\Plugin\Commerce\PaymentGateway;
 
+use Braintree\Exception;
+use SquareConnect\Api\LocationApi;
+use SquareConnect\Api\TransactionApi;
 use Drupal\commerce_payment\Entity\PaymentInterface;
 use Drupal\commerce_payment\Entity\PaymentMethodInterface;
 use Drupal\commerce_payment\PaymentMethodTypeManager;
@@ -11,7 +14,6 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Drupal\Component\Utility\NestedArray;
-
 
 /**
  * Provides the Squareup payment gateway.
@@ -38,7 +40,7 @@ class Squareup extends OnsitePaymentGatewayBase {
    */
   public function __construct(array $configuration, $plugin_id, $plugin_definition, EntityTypeManagerInterface $entity_type_manager, PaymentTypeManager $payment_type_manager, PaymentMethodTypeManager $payment_method_type_manager) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $entity_type_manager, $payment_type_manager, $payment_method_type_manager);
-    $this->api = new \SquareConnect\Api\TransactionApi();
+    $this->api = new TransactionApi();
   }
 
   /**
@@ -95,7 +97,7 @@ class Squareup extends OnsitePaymentGatewayBase {
     }
     $location_markup = TRUE;
     if (!empty($personal_access_token)) {
-      $location_api = new \SquareConnect\Api\LocationApi();
+      $location_api = new LocationApi();
       try {
         $locations = $location_api->listLocations($personal_access_token);
         if (!empty($locations)) {
@@ -208,7 +210,7 @@ class Squareup extends OnsitePaymentGatewayBase {
       $result = $this->api->transaction()->sale($transaction_data);
       ErrorHelper::handleErrors($result);
     }
-    catch (\Braintree\Exception $e) {
+    catch (Exception $e) {
       ErrorHelper::handleException($e);
     }
 
@@ -238,7 +240,7 @@ class Squareup extends OnsitePaymentGatewayBase {
       $result = $this->api->transaction()->submitForSettlement($remote_id, $decimal_amount);
       ErrorHelper::handleErrors($result);
     }
-    catch (\Braintree\Exception $e) {
+    catch (Exception $e) {
       ErrorHelper::handleException($e);
     }
 
@@ -261,7 +263,7 @@ class Squareup extends OnsitePaymentGatewayBase {
       $result = $this->api->transaction()->void($remote_id);
       ErrorHelper::handleErrors($result);
     }
-    catch (\Braintree\Exception $e) {
+    catch (Exception $e) {
       ErrorHelper::handleException($e);
     }
 
@@ -290,7 +292,7 @@ class Squareup extends OnsitePaymentGatewayBase {
       $result = $this->api->transaction()->refund($remote_id, $decimal_amount);
       ErrorHelper::handleErrors($result);
     }
-    catch (\Braintree\Exception $e) {
+    catch (Exception $e) {
       ErrorHelper::handleException($e);
     }
 
@@ -419,7 +421,7 @@ class Squareup extends OnsitePaymentGatewayBase {
         $result = $this->api->customer()->create($data);
         ErrorHelper::handleErrors($result);
       }
-      catch (\Braintree\Exception $e) {
+      catch (Exception $e) {
         ErrorHelper::handleException($e);
       }
       $remote_payment_method = $result->customer->paymentMethods[0];
@@ -448,7 +450,7 @@ class Squareup extends OnsitePaymentGatewayBase {
       $result = $this->api->paymentMethod()->delete($payment_method->getRemoteId());
       ErrorHelper::handleErrors($result);
     }
-    catch (\Braintree\Exception $e) {
+    catch (Exception $e) {
       ErrorHelper::handleException($e);
     }
     // Delete the local entity.

@@ -37,7 +37,7 @@
    *
    * @constructor
    */
-  Drupal.commerceSquareup = function($form, settings) {
+  Drupal.commerceSquareup = function ($form, settings) {
     this.settings = settings;
     var paymentForm = new SqPaymentForm({
       applicationId: settings.applicationId,
@@ -65,12 +65,12 @@
       callbacks: {
         // Called when the SqPaymentForm completes a request to generate a card
         // nonce, even if the request failed because of an error.
-        cardNonceResponseReceived: function(errors, nonce, cardData) {
+        cardNonceResponseReceived: function (errors, nonce, cardData) {
           if (errors) {
             console.log("Encountered errors:");
              // This logs all errors encountered during nonce generation to the
             // Javascript console.
-            errors.forEach(function(error) {
+            errors.forEach(function (error) {
               console.log('  ' + error.message);
             });
           // No errors occurred. Extract the card nonce.
@@ -82,36 +82,41 @@
           }
         },
 
-        unsupportedBrowserDetected: function() {
+        unsupportedBrowserDetected: function () {
           // Fill in this callback to alert buyers when their browser is not supported.
         },
 
         // Fill in these cases to respond to various events that can occur while a
         // buyer is using the payment form.
-        inputEventReceived: function(inputEvent) {
+        inputEventReceived: function (inputEvent) {
           switch (inputEvent.eventType) {
             case 'focusClassAdded':
-              // Handle as desired
+              // Handle as desired.
               break;
+
             case 'focusClassRemoved':
-              // Handle as desired
+              // Handle as desired.
               break;
+
             case 'errorClassAdded':
-              // Handle as desired
+              // Handle as desired.
               break;
+
             case 'errorClassRemoved':
-              // Handle as desired
+              // Handle as desired.
               break;
+
             case 'cardBrandChanged':
-              // Handle as desired
+              // Handle as desired.
               break;
+
             case 'postalCodeChanged':
-              // Handle as desired
+              // Handle as desired.
               break;
           }
         },
 
-        paymentFormLoaded: function() {
+        paymentFormLoaded: function () {
          paymentForm.setPostalCode('94103');
         }
       }

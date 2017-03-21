@@ -5,6 +5,9 @@ namespace Drupal\commerce_squareup\PluginForm\Squareup;
 use Drupal\commerce_payment\PluginForm\PaymentMethodAddForm as BasePaymentMethodAddForm;
 use Drupal\Core\Form\FormStateInterface;
 
+/**
+ * Payment method add form for Square.
+ */
 class PaymentMethodAddForm extends BasePaymentMethodAddForm {
 
   /**
