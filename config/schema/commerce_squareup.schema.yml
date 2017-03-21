@@ -11,5 +11,5 @@ commerce_payment.commerce_payment_gateway.plugin.squareup:
       type: string
       label: 'Personal Access Token'
     location_id:
-      type string
+      type: string
       label: Location ID
