@@ -90,7 +90,6 @@ class Squareup extends OnsitePaymentGatewayBase {
       '#attributes' => ['id' => 'squareup-location-wrapper'],
     ];
     $values = $form_state->getValues();
-    $input = $form_state->getUserInput();
     $personal_access_token = NestedArray::getValue($values, $form['#parents'])['personal_access_token'];
     if (empty($personal_access_token)) {
       $personal_access_token = $this->configuration['personal_access_token'];
@@ -123,7 +122,7 @@ class Squareup extends OnsitePaymentGatewayBase {
     }
     if ($location_markup) {
       $form['location_wrapper']['location_id'] = [
-        '#markup' => $this->t('Please provide a valid personal access token to select a location id.'),
+        '#markup' => $this->t('Please provide a valid personal access token to select a location ID.'),
       ];
     }
     return $form;
@@ -141,10 +140,9 @@ class Squareup extends OnsitePaymentGatewayBase {
    */
   public function validateConfigurationForm(array &$form, FormStateInterface $form_state) {
     parent::validateConfigurationForm($form, $form_state);
-    $values = $form_state->getValues();
-    $location = NestedArray::getValue($values, $form['#parents'])['location_wrapper']['location_id'];
-    if (empty($location)) {
-      $form_state->setErrorByName('configuration[personal_access_token]', $this->t('Please provide a valid personal access token to select a location id.'));
+    $values = $form_state->getValue($form['#parents']);
+    if (empty($values['location_wrapper']['location_id'])) {
+      $form_state->setErrorByName('configuration[personal_access_token]', $this->t('Please provide a valid personal access token to select a location ID.'));
     }
   }
 
@@ -159,7 +157,7 @@ class Squareup extends OnsitePaymentGatewayBase {
       $this->configuration['app_name'] = $values['app_name'];
       $this->configuration['app_id'] = $values['app_id'];
       $this->configuration['personal_access_token'] = $values['personal_access_token'];
-      $this->configuration['location_id'] = $values['location_id'];
+      $this->configuration['location_id'] = $values['location_wrapper']['location_id'];
     }
   }
 
