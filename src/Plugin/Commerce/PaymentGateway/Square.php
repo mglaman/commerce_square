@@ -1,10 +1,10 @@
 <?php
 
-namespace Drupal\commerce_squareup\Plugin\Commerce\PaymentGateway;
+namespace Drupal\commerce_square\Plugin\Commerce\PaymentGateway;
 
 use Drupal\commerce\TimeInterface;
 use Drupal\commerce_payment\Exception\HardDeclineException;
-use Drupal\commerce_squareup\ErrorHelper;
+use Drupal\commerce_square\ErrorHelper;
 use SquareConnect\Api\LocationApi;
 use SquareConnect\Api\TransactionApi;
 use Drupal\commerce_payment\Entity\PaymentInterface;
@@ -21,16 +21,16 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\Component\Utility\NestedArray;
 
 /**
- * Provides the Squareup payment gateway.
+ * Provides the Square payment gateway.
  *
  * @CommercePaymentGateway(
  *   id = "square",
  *   label = "Square",
  *   display_label = "Square",
  *   forms = {
- *     "add-payment-method" = "Drupal\commerce_squareup\PluginForm\Square\PaymentMethodAddForm",
+ *     "add-payment-method" = "Drupal\commerce_square\PluginForm\Square\PaymentMethodAddForm",
  *   },
- *   js_library = "commerce_squareup/square_connect",
+ *   js_library = "commerce_square/square_connect",
  *   payment_method_types = {"credit_card"},
  *   credit_card_types = {
  *     "amex", "dinersclub", "discover", "jcb", "mastercard", "visa",
@@ -102,7 +102,7 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
       '#default_value' => $this->configuration['personal_access_token'],
       '#required' => TRUE,
       '#ajax' => [
-        'wrapper' => 'squareup-location-wrapper',
+        'wrapper' => 'square-location-wrapper',
         'callback' => [$this, 'locationsAjax'],
         // Needs the patch in https://www.drupal.org/node/2627788.
         'disable-refocus' => TRUE,
@@ -110,7 +110,7 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     ];
     $form['location_wrapper'] = [
       '#type' => 'container',
-      '#attributes' => ['id' => 'squareup-location-wrapper'],
+      '#attributes' => ['id' => 'square-location-wrapper'],
     ];
     $values = $form_state->getValues();
     $personal_access_token = NestedArray::getValue($values, $form['#parents'])['personal_access_token'];

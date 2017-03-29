@@ -12,9 +12,9 @@ square_connect:
 form:
   version: VERSION
   js:
-    js/commerce_squareup.form.js: {}
+    js/commerce_square.form.js: {}
   dependencies:
     - core/drupal
     - core/drupalSettings
     - core/jquery
-    - commerce_squareup/square_connect
+    - commerce_square/square_connect

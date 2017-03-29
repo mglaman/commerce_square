@@ -1,6 +1,6 @@
 /**
  * @file
- * Defines behaviors for the Squareup payment method form.
+ * Defines behaviors for the Square payment method form.
  */
 
 (function ($, Drupal, drupalSettings) {
@@ -20,12 +20,12 @@
    */
   Drupal.behaviors.commerceSquareForm = {
     attach: function (context) {
-      var $squareForm = $(context).find('.squareup-form').once();
+      var $squareForm = $(context).find('.square-form').once();
       if ($squareForm.length) {
         commerceSquare = $squareForm.data('square');
         if (!commerceSquare) {
           try {
-            commerceSquare = new Drupal.commerceSquareup($squareForm, drupalSettings.commerceSquareup);
+            commerceSquare = new Drupal.commerceSquare($squareForm, drupalSettings.commerceSquare);
             $squareForm.data('square', commerceSquare);
           }
           catch (e) {
@@ -35,7 +35,7 @@
       }
     },
     detach: function (context) {
-      var $squareForm = $(context).find('.squareup-form').once();
+      var $squareForm = $(context).find('.square-form').once();
       if ($squareForm.length > 0) {
         commerceSquare = $squareForm.data('square');
         if (commerceSquare) {
@@ -47,11 +47,11 @@
   };
 
   /**
-   * Wraps the Squareup object with Commerce-specific logic.
+   * Wraps the SqPaymentForm object with Commerce-specific logic.
    *
    * @constructor
    */
-  Drupal.commerceSquareup = function ($squareForm, settings) {
+  Drupal.commerceSquare = function ($squareForm, settings) {
     var $rootForm = $squareForm.closest('form');
     var $formSubmit = $rootForm.find('[name="op"]');
     $formSubmit.prop('disabled', true);
@@ -70,19 +70,19 @@
         }
       ],
       cardNumber: {
-        elementId: 'squareup-card-number',
+        elementId: 'square-card-number',
         placeholder: '•••• •••• •••• ••••'
       },
       cvv: {
-        elementId: 'squareup-cvv',
+        elementId: 'square-cvv',
         placeholder: 'CVV'
       },
       expirationDate: {
-        elementId: 'squareup-expiration-date',
+        elementId: 'square-expiration-date',
         placeholder: 'MM/YY'
       },
       postalCode: {
-        elementId: 'squareup-postal-code'
+        elementId: 'square-postal-code'
       },
       callbacks: {
         // Called when the SqPaymentForm completes a request to generate a card
@@ -95,11 +95,11 @@
           }
           // No errors occurred. Extract the card nonce.
           else {
-            $squareForm.find('.squareup-nonce').val(nonce);
-            $squareForm.find('.squareup-card-type').val(cardData.card_brand);
-            $squareForm.find('.squareup-last4').val(cardData.last_4);
-            $squareForm.find('.squareup-exp-month').val(cardData.exp_month);
-            $squareForm.find('.squareup-exp-year').val(cardData.exp_year);
+            $squareForm.find('.square-nonce').val(nonce);
+            $squareForm.find('.square-card-type').val(cardData.card_brand);
+            $squareForm.find('.square-last4').val(cardData.last_4);
+            $squareForm.find('.square-exp-month').val(cardData.exp_month);
+            $squareForm.find('.square-exp-year').val(cardData.exp_year);
             $rootForm.submit();
           }
         },

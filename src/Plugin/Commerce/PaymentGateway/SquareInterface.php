@@ -1,6 +1,6 @@
 <?php
 
-namespace Drupal\commerce_squareup\Plugin\Commerce\PaymentGateway;
+namespace Drupal\commerce_square\Plugin\Commerce\PaymentGateway;
 
 use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\OnsitePaymentGatewayInterface;
 

@@ -1,6 +1,6 @@
 <?php
 
-namespace Drupal\commerce_squareup;
+namespace Drupal\commerce_square;
 
 use Drupal\commerce_payment\Exception\HardDeclineException;
 use Drupal\commerce_payment\Exception\InvalidResponseException;

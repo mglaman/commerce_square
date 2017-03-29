@@ -1,6 +1,6 @@
 <?php
 
-namespace Drupal\Tests\commerce_squareup\FunctionalJavascript;
+namespace Drupal\Tests\commerce_square\FunctionalJavascript;
 
 use Drupal\FunctionalJavascriptTests\JSWebAssert;
 use Drupal\Tests\commerce\Functional\CommerceBrowserTestBase;
@@ -9,7 +9,7 @@ use Drupal\Tests\commerce\FunctionalJavascript\JavascriptTestTrait;
 /**
  * Tests the creation and configuration of the gateway.
  *
- * @group commerce_squareup
+ * @group commerce_square
  */
 class ConfigureGatewayTest extends CommerceBrowserTestBase {
 
@@ -22,7 +22,7 @@ class ConfigureGatewayTest extends CommerceBrowserTestBase {
    */
   public static $modules = [
     'commerce_payment',
-    'commerce_squareup',
+    'commerce_square',
   ];
 
   /**
@@ -35,9 +35,9 @@ class ConfigureGatewayTest extends CommerceBrowserTestBase {
   }
 
   /**
-   * Tests that a Squareup gateway can be configured.
+   * Tests that a Square gateway can be configured.
    */
-  public function testCreateSquareupGateway() {
+  public function testCreateSquareGateway() {
     $this->drupalGet('admin/commerce/config/payment-gateways');
     $this->getSession()->getPage()->clickLink('Add payment gateway');
     $this->assertSession()->addressEquals('admin/commerce/config/payment-gateways/add');
