@@ -2,136 +2,41 @@
 
 namespace Drupal\commerce_squareup;
 
-use Braintree\Exception\DownForMaintenance;
-use Braintree\Exception\ServerError;
-use Braintree\Exception\TooManyRequests;
-use Braintree\Exception\UpgradeRequired;
-use Braintree\Exception\NotFound;
-use Braintree\Exception\Authorization;
-use Braintree\Exception\Authentication;
-use Braintree\Exception;
 use Drupal\commerce_payment\Exception\AuthenticationException;
 use Drupal\commerce_payment\Exception\HardDeclineException;
 use Drupal\commerce_payment\Exception\InvalidRequestException;
 use Drupal\commerce_payment\Exception\InvalidResponseException;
 use Drupal\commerce_payment\Exception\SoftDeclineException;
+use SquareConnect\ApiException;
 
 /**
- * Translates Braintree exceptions and errors into Commerce exceptions.
+ * Translates Square exceptions and errors into Commerce exceptions.
  *
- * @see https://developers.braintreepayments.com/reference/general/exceptions/php
- * @see https://developers.braintreepayments.com/reference/response/transaction/php#unsuccessful-result
+ * @see https://docs.connect.squareup.com/api/connect/v2/#type-errorcategory
+ * @see https://docs.connect.squareup.com/api/connect/v2/#type-errorcode
  */
 class ErrorHelper {
 
   /**
    * Translates Braintree exceptions into Commerce exceptions.
    *
-   * @param \Braintree\Exception $exception
-   *   The Braintree exception.
+   * @param \SquareConnect\ApiException $exception
+   *   The Square exception.
    *
-   * @throws \Drupal\commerce_payment\Exception\PaymentGatewayException
+   * @return \Drupal\commerce_payment\Exception\PaymentGatewayException
    *   The Commerce exception.
    */
-  public static function handleException(Exception $exception) {
-    if ($exception instanceof Authentication) {
-      throw new AuthenticationException('Braintree authentication failed.');
-    }
-    elseif ($exception instanceof Authorization) {
-      throw new AuthenticationException('The used API key is not authorized to perform the attempted action.');
-    }
-    elseif ($exception instanceof NotFound) {
-      throw new InvalidRequestException('Braintree resource not found.');
-    }
-    elseif ($exception instanceof UpgradeRequired) {
-      throw new InvalidRequestException('The Braintree client library needs to be updated.');
-    }
-    elseif ($exception instanceof TooManyRequests) {
-      throw new InvalidRequestException('Too many requests.');
-    }
-    elseif ($exception instanceof ServerError) {
-      throw new InvalidResponseException('Server error.');
-    }
-    elseif ($exception instanceof DownForMaintenance) {
-      throw new InvalidResponseException('Request timed out.');
-    }
-    else {
-      throw new InvalidResponseException($exception->getMessage());
-    }
-  }
+  public static function convertException(ApiException $exception) {
+    $response_body = $exception->getResponseBody();
+    $error = reset($response_body->errors);
 
-  /**
-   * Translates Braintree errors into Commerce exceptions.
-   *
-   * @param object $result
-   *   The Braintree result object.
-   *
-   * @throws \Drupal\commerce_payment\Exception\PaymentGatewayException
-   *   The Commerce exception.
-   */
-  public static function handleErrors($result) {
-    if ($result->success) {
-      return;
-    }
+    $stop = null;
+    switch ($error->category) {
+      case 'PAYMENT_METHOD_ERROR':
+        return new SoftDeclineException($error->detail);
 
-    $errors = $result->errors->deepAll();
-    if (!empty($errors)) {
-      // https://developers.braintreepayments.com/reference/general/validation-errors/all/php
-      // Validation errors can be due to a module error (mapped to
-      // InvalidRequestException) or due to a user input error (mapped to
-      // a HardDeclineException).
-      $hard_decline_codes = [81813, 91828, 81736, 81737, 81750, 91568];
-      foreach ($errors as $error) {
-        if (in_array($error->code, $hard_decline_codes)) {
-          throw new HardDeclineException($error->message, $error->code);
-        }
-        else {
-          throw new InvalidRequestException($error->message, $error->code);
-        }
-      }
-    }
-
-    // Both verification and the transaction can result in the same errors.
-    $error_statuses = [
-      'settlement_declined',
-      'gateway_rejected',
-      'processor_declined',
-    ];
-    if ($result->verification && in_array($result->verification->status, $error_statuses)) {
-      $error = $result->verification;
-      $status = $result->verification->status;
-    }
-    elseif ($result->transaction && in_array($result->verification->status, $error_statuses)) {
-      $error = $result->verification;
-      $status = $result->verification->status;
-    }
-
-    if ($status == 'settlement_declined') {
-      $code = $error->processorSettlementResponseCode;
-      $text = $error->processorSettlementResponseText;
-      throw new HardDeclineException($text, $code);
-    }
-    elseif ($status == 'gateway_rejected') {
-      $reason = $error->gatewayRejectionReason;
-      throw new HardDeclineException('Rejected by the gateway. Reason: ' . $reason);
-    }
-    elseif ($status == 'processor_declined') {
-      // https://developers.braintreepayments.com/reference/general/processor-responses/authorization-responses
-      $soft_decline_codes = [
-        2000, 2001, 2002, 2003, 2009, 2016, 2021, 2025, 2026, 2033, 2034, 2035,
-        2038, 2040, 2042, 2046, 2048, 2050, 2054, 2057, 2062,
-      ];
-      $code = $error->processorResponseCode;
-      $text = $error->processorResponseText;
-      if (!empty($error->additionalProcessorResponse)) {
-        $text .= ' (' . $error->additionalProcessorResponse . ')';
-      }
-      if (in_array($code, $soft_decline_codes) || ($code >= 2092 && $code <= 3000)) {
-        throw new SoftDeclineException($text, $code);
-      }
-      else {
-        throw new HardDeclineException($text, $code);
-      }
+      default:
+        return new InvalidResponseException($exception->getMessage(), $exception->getCode(), $exception);
     }
   }
 

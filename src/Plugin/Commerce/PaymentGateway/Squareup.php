@@ -3,6 +3,14 @@
 namespace Drupal\commerce_squareup\Plugin\Commerce\PaymentGateway;
 
 use Braintree\Exception;
+use Drupal\commerce\TimeInterface;
+use Drupal\commerce_payment\CreditCard;
+use Drupal\commerce_payment\Exception\HardDeclineException;
+use Drupal\commerce_payment\Exception\InvalidRequestException;
+use Drupal\commerce_price\Price;
+use Drupal\commerce_squareup\ErrorHelper;
+use SquareConnect\Api\CustomerApi;
+use SquareConnect\Api\CustomerCardApi;
 use SquareConnect\Api\LocationApi;
 use SquareConnect\Api\TransactionApi;
 use Drupal\commerce_payment\Entity\PaymentInterface;
@@ -12,7 +20,13 @@ use Drupal\commerce_payment\PaymentTypeManager;
 use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\OnsitePaymentGatewayBase;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\FormStateInterface;
-use Symfony\Component\HttpFoundation\Request;
+use SquareConnect\ApiException;
+use SquareConnect\Model\Address;
+use SquareConnect\Model\ChargeRequest;
+use SquareConnect\Model\CreateCustomerCardRequest;
+use SquareConnect\Model\CreateCustomerRequest;
+use SquareConnect\Model\Money;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\Component\Utility\NestedArray;
 
 /**
@@ -34,14 +48,35 @@ use Drupal\Component\Utility\NestedArray;
  */
 class Squareup extends OnsitePaymentGatewayBase {
 
-  protected $api;
+  protected $time;
+  protected $transactionApi;
+  protected $customerApi;
+  protected $customerCardApi;
 
   /**
    * {@inheritdoc}
    */
-  public function __construct(array $configuration, $plugin_id, $plugin_definition, EntityTypeManagerInterface $entity_type_manager, PaymentTypeManager $payment_type_manager, PaymentMethodTypeManager $payment_method_type_manager) {
+  public function __construct(array $configuration, $plugin_id, $plugin_definition, EntityTypeManagerInterface $entity_type_manager, PaymentTypeManager $payment_type_manager, PaymentMethodTypeManager $payment_method_type_manager, TimeInterface $time) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $entity_type_manager, $payment_type_manager, $payment_method_type_manager);
-    $this->api = new TransactionApi();
+    $this->time = $time;
+    $this->transactionApi = new TransactionApi();
+    $this->customerApi = new CustomerApi();
+    $this->customerCardApi = new CustomerCardApi();
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition) {
+    return new static(
+      $configuration,
+      $plugin_id,
+      $plugin_definition,
+      $container->get('entity_type.manager'),
+      $container->get('plugin.manager.commerce_payment_type'),
+      $container->get('plugin.manager.commerce_payment_method_type'),
+      $container->get('commerce.time')
+    );
   }
 
   /**
@@ -132,7 +167,7 @@ class Squareup extends OnsitePaymentGatewayBase {
   /**
    * AJAX callback for the configuration form.
    */
-  public function locationsAjax(array &$form, FormStateInterface $form_state, Request $request) {
+  public function locationsAjax(array &$form, FormStateInterface $form_state) {
     return $form['configuration']['location_wrapper'];
   }
 
@@ -180,7 +215,7 @@ class Squareup extends OnsitePaymentGatewayBase {
     if (empty($payment_method)) {
       throw new \InvalidArgumentException('The provided payment has no payment method referenced.');
     }
-    if (REQUEST_TIME >= $payment_method->getExpiresTime()) {
+    if ($this->time->getRequestTime() >= $payment_method->getExpiresTime()) {
       throw new HardDeclineException('The provided payment method has expired');
     }
     $amount = $payment->getAmount();
@@ -189,36 +224,42 @@ class Squareup extends OnsitePaymentGatewayBase {
       throw new InvalidRequestException(sprintf('No merchant account ID configured for currency %s', $currency_code));
     }
 
-    $transaction_data = [
-      'channel' => 'CommerceGuys_BT_Vzero',
-      'merchantAccountId' => $this->configuration['merchant_account_id'][$currency_code],
-      'orderId' => $payment->getOrderId(),
-      'amount' => $amount->getNumber(),
-      'options' => [
-        'submitForSettlement' => $capture,
-      ],
-    ];
+    $charge_request = new ChargeRequest();
+    $charge_request->setAmountMoney(new Money([
+      'amount' => $amount,
+      'currency' => $currency_code,
+    ]));
+    $charge_request->setDelayCapture(!$capture);
     if ($payment_method->isReusable()) {
-      $transaction_data['paymentMethodToken'] = $payment_method->getRemoteId();
+      $owner = $payment_method->getOwner();
+      $customer_id = $owner->get('commerce_remote_id')->getByProvider('commerce_squareup_' . $this->getPluginId());
+      $charge_request->setCustomerCardId($customer_id);
+      $charge_request->setCustomerCardId($payment_method->getRemoteId());
     }
     else {
-      $transaction_data['paymentMethodNonce'] = $payment_method->getRemoteId();
+      $charge_request->setCardNonce($payment_method->getRemoteId());
     }
 
     try {
-      $result = $this->api->transaction()->sale($transaction_data);
-      ErrorHelper::handleErrors($result);
+      $result = $this->transactionApi->charge(
+        $this->configuration['personal_access_token'],
+        $this->configuration['location_id'],
+        $charge_request
+      );
+      if ($result->getErrors()) {
+        $stop = null;
+      }
     }
-    catch (Exception $e) {
-      ErrorHelper::handleException($e);
+    catch (ApiException $e) {
+      throw ErrorHelper::convertException($e);
     }
 
     $payment->state = $capture ? 'capture_completed' : 'authorization';
-    $payment->setRemoteId($result->transaction->id);
-    $payment->setAuthorizedTime(REQUEST_TIME);
+    $payment->setRemoteId($result->getTransaction()->getId());
+    $payment->setAuthorizedTime($result->getTransaction()->getCreatedAt());
     // @todo Find out how long an authorization is valid, set its expiration.
     if ($capture) {
-      $payment->setCapturedTime(REQUEST_TIME);
+      $payment->setCapturedTime($result->getTransaction()->getCreatedAt());
     }
     $payment->save();
   }
@@ -234,13 +275,17 @@ class Squareup extends OnsitePaymentGatewayBase {
     $amount = $amount ?: $payment->getAmount();
 
     try {
-      $remote_id = $payment->getRemoteId();
-      $decimal_amount = $amount->getNumber();
-      $result = $this->api->transaction()->submitForSettlement($remote_id, $decimal_amount);
-      ErrorHelper::handleErrors($result);
+      $result = $this->transactionApi->captureTransaction(
+        $this->configuration['personal_access_token'],
+        $this->configuration['location_id'],
+        $payment->getRemoteId()
+      );
+      if ($result->getErrors()) {
+        $stop = null;
+      }
     }
-    catch (Exception $e) {
-      ErrorHelper::handleException($e);
+    catch (ApiException $e) {
+      throw ErrorHelper::convertException($e);
     }
 
     $payment->state = 'capture_completed';
@@ -259,11 +304,13 @@ class Squareup extends OnsitePaymentGatewayBase {
 
     try {
       $remote_id = $payment->getRemoteId();
-      $result = $this->api->transaction()->void($remote_id);
-      ErrorHelper::handleErrors($result);
+      $result = $this->transactionApi->transaction()->void($remote_id);
+      if ($result->getErrors()) {
+        $stop = null;
+      }
     }
-    catch (Exception $e) {
-      ErrorHelper::handleException($e);
+    catch (ApiException $e) {
+      throw ErrorHelper::convertException($e);
     }
 
     $payment->state = 'authorization_voided';
@@ -288,11 +335,13 @@ class Squareup extends OnsitePaymentGatewayBase {
     try {
       $remote_id = $payment->getRemoteId();
       $decimal_amount = $amount->getNumber();
-      $result = $this->api->transaction()->refund($remote_id, $decimal_amount);
-      ErrorHelper::handleErrors($result);
+      $result = $this->transactionApi->transaction()->refund($remote_id, $decimal_amount);
+      if ($result->getErrors()) {
+        $stop = null;
+      }
     }
-    catch (Exception $e) {
-      ErrorHelper::handleException($e);
+    catch (ApiException $e) {
+      throw ErrorHelper::convertException($e);
     }
 
     $old_refunded_amount = $payment->getRefundedAmount();
@@ -313,7 +362,7 @@ class Squareup extends OnsitePaymentGatewayBase {
    */
   public function createPaymentMethod(PaymentMethodInterface $payment_method, array $payment_details) {
     $required_keys = [
-      'payment_method_nonce', 'card_type', 'last2',
+      'payment_method_nonce', 'card_type', 'last4',
     ];
     foreach ($required_keys as $required_key) {
       if (empty($payment_details[$required_key])) {
@@ -323,12 +372,12 @@ class Squareup extends OnsitePaymentGatewayBase {
 
     if (!$payment_method->isReusable()) {
       $payment_method->card_type = $this->mapCreditCardType($payment_details['card_type']);
-      $payment_method->card_number = $payment_details['last2'];
+      $payment_method->card_number = $payment_details['last4'];
 
       $remote_id = $payment_details['payment_method_nonce'];
       // Nonces expire after 3h. We reduce that time by 5s to account for the
       // time it took to do the server request after the JS tokenization.
-      $expires = REQUEST_TIME + (3600 * 3) - 5;
+      $expires = $this->time->getRequestTime() + (3600 * 3) - 5;
     }
     else {
       $remote_payment_method = $this->doCreatePaymentMethod($payment_method, $payment_details);
@@ -337,7 +386,7 @@ class Squareup extends OnsitePaymentGatewayBase {
       $payment_method->card_exp_month = $remote_payment_method['expiration_month'];
       $payment_method->card_exp_year = $remote_payment_method['expiration_year'];
 
-      $remote_id = $remote_payment_method['token'];
+      $remote_id = $remote_payment_method['id'];
       $expires = CreditCard::calculateExpirationTimestamp($remote_payment_method['expiration_month'], $remote_payment_method['expiration_year']);
     }
 
@@ -367,76 +416,92 @@ class Squareup extends OnsitePaymentGatewayBase {
     $owner = $payment_method->getOwner();
     /** @var \Drupal\address\AddressInterface $address */
     $address = $payment_method->getBillingProfile()->address->first();
-    // If the owner is anonymous, the created customer will be blank.
-    // https://developers.braintreepayments.com/reference/request/customer/create/php#blank-customer
+    $square_address_model = new Address(array_filter([
+      'address_line_1' => $address->getAddressLine1(),
+      'address_line_2' => $address->getAddressLine2(),
+      'address_line_3' => '',
+      'locality' => $address->getLocality(),
+      'sublocality' => $address->getDependentLocality(),
+      'sublocality_2' => '',
+      'sublocality_3' => '',
+      'administrative_district_level_1' => $address->getAdministrativeArea(),
+      'administrative_district_level_2' => '',
+      'administrative_district_level_3' => '',
+      'postal_code' => $address->getPostalCode(),
+      'country' => $address->getCountryCode(),
+      'first_name' => $address->getGivenName(),
+      'last_name' => $address->getFamilyName(),
+      'organization' => $address->getOrganization(),
+    ]));
+
+    $create_card_request = new CreateCustomerCardRequest();
+    $create_card_request
+      ->setCardNonce($payment_details['payment_method_nonce'])
+      ->setCardholderName($address->getGivenName() . ' ' . $address->getFamilyName())
+      ->setBillingAddress($square_address_model);
+
     $customer_id = NULL;
-    $customer_data = [];
     if ($owner) {
-      $customer_id = $owner->commerce_remote_id->getByProvider('commerce_squareup');
-      $customer_data['email'] = $owner->getEmail();
+      $customer_id = $owner->get('commerce_remote_id')->getByProvider('commerce_squareup_' . $this->getPluginId());
     }
-    $billing_address_data = [
-      'billingAddress' => [
-        'firstName' => $address->getGivenName(),
-        'lastName' => $address->getFamilyName(),
-        'company' => $address->getOrganization(),
-        'streetAddress' => $address->getAddressLine1(),
-        'extendedAddress' => $address->getAddressLine2(),
-        'locality' => $address->getLocality(),
-        'region' => $address->getAdministrativeArea(),
-        'postalCode' => $address->getPostalCode(),
-        'countryCodeAlpha2' => $address->getCountryCode(),
-      ],
-    ];
-    $payment_method_data = [
-      'cardholderName' => $address->getGivenName() . ' ' . $address->getFamilyName(),
-      'paymentMethodNonce' => $payment_details['payment_method_nonce'],
-      'options' => [
-        'verifyCard' => TRUE,
-      ],
-    ];
 
     if ($customer_id) {
       // Create a payment method for an existing customer.
       try {
-        $data = $billing_address_data + $payment_method_data + [
-          'customerId' => $customer_id,
-        ];
-        $result = $this->api->paymentMethod()->create($data);
-        ErrorHelper::handleErrors($result);
+        $result = $this->customerCardApi->createCustomerCard($this->configuration['personal_access_token'], $customer_id, $create_card_request);
+        if ($result->getErrors()) {
+          $stop = null;
+        }
       }
-      catch (\Exception $e) {
-        ErrorHelper::handleException($e);
+      catch (ApiException $e) {
+        throw ErrorHelper::convertException($e);
       }
 
-      $remote_payment_method = $result->paymentMethod;
+      $remote_payment_method = $result->getCard();
     }
     else {
       // Create both the customer and the payment method.
-      try {
-        $data = $customer_data + [
-          'creditCard' => $billing_address_data + $payment_method_data,
-        ];
-        $result = $this->api->customer()->create($data);
-        ErrorHelper::handleErrors($result);
-      }
-      catch (Exception $e) {
-        ErrorHelper::handleException($e);
-      }
-      $remote_payment_method = $result->customer->paymentMethods[0];
+      $create_customer_request = new CreateCustomerRequest();
+      $create_customer_request
+        ->setGivenName($address->getGivenName())
+        ->setFamilyName($address->getFamilyName())
+        ->setAddress($square_address_model);
+
       if ($owner) {
-        $customer_id = $result->customer->id;
-        $owner->commerce_remote_id->setByProvider('commerce_squareup', $customer_id);
+        $create_customer_request
+          ->setEmailAddress($owner->getEmail())
+          ->setReferenceId($owner->uuid());
+      }
+
+      try {
+        $result = $this->customerApi->createCustomer($this->configuration['personal_access_token'], $create_customer_request);
+        if ($result->getErrors()) {
+          $stop = null;
+        }
+
+        $remote_customer = $result->getCustomer();
+        $remote_payment_method = $this->customerCardApi->createCustomerCard($this->configuration['personal_access_token'], $remote_customer->getId(), $create_card_request);
+        if ($remote_payment_method->getErrors()) {
+          $stop = null;
+        }
+      }
+      catch (ApiException $e) {
+        throw ErrorHelper::convertException($e);
+      }
+
+      if ($owner) {
+        $customer_id = $remote_customer->getId();
+        $owner->get('commerce_remote_id')->setByProvider('commerce_squareup_' . $this->getPluginId(), $customer_id);
         $owner->save();
       }
     }
 
     return [
-      'token' => $remote_payment_method->token,
-      'card_type' => $remote_payment_method->cardType,
-      'last4' => $remote_payment_method->last4,
-      'expiration_month' => $remote_payment_method->expirationMonth,
-      'expiration_year' => $remote_payment_method->expirationYear,
+      'id' => $remote_payment_method->getId(),
+      'card_type' => $remote_payment_method->getCardBrand(),
+      'last4' => $remote_payment_method->getLast4(),
+      'expiration_month' => $remote_payment_method->getExpMonth(),
+      'expiration_year' => $remote_payment_method->getExpYear(),
     ];
   }
 
@@ -446,11 +511,14 @@ class Squareup extends OnsitePaymentGatewayBase {
   public function deletePaymentMethod(PaymentMethodInterface $payment_method) {
     // Delete the remote record.
     try {
-      $result = $this->api->paymentMethod()->delete($payment_method->getRemoteId());
-      ErrorHelper::handleErrors($result);
+      $customer_id = $payment_method->getOwner()->get('commerce_remote_id')->getByProvider('commerce_squareup_' . $this->getPluginId());
+      $result = $this->customerCardApi->deleteCustomerCard($this->configuration['personal_access_token'], $customer_id, $payment_method->getRemoteId());
+      if ($result->getErrors()) {
+        $stop = null;
+      }
     }
-    catch (Exception $e) {
-      ErrorHelper::handleException($e);
+    catch (ApiException $e) {
+      throw ErrorHelper::convertException($e);
     }
     // Delete the local entity.
     $payment_method->delete();
@@ -467,14 +535,13 @@ class Squareup extends OnsitePaymentGatewayBase {
    */
   protected function mapCreditCardType($card_type) {
     $map = [
-      'American Express' => 'amex',
-      'China UnionPay' => 'unionpay',
-      'Diners Club' => 'dinersclub',
-      'Discover' => 'discover',
+      'AMERICAN_EXPRESS' => 'amex',
+      'CHINA_UNIONPAY' => 'unionpay',
+      'DISCOVER_DINERS' => 'dinersclub',
+      'DISCOVER' => 'discover',
       'JCB' => 'jcb',
-      'Maestro' => 'maestro',
-      'MasterCard' => 'mastercard',
-      'Visa' => 'visa',
+      'MASTERCARD' => 'mastercard',
+      'VISA' => 'visa',
     ];
     if (!isset($map[$card_type])) {
       throw new HardDeclineException(sprintf('Unsupported credit card type "%s".', $card_type));

@@ -17,7 +17,6 @@ class PaymentMethodAddForm extends BasePaymentMethodAddForm {
     /** @var \Drupal\commerce_squareup\Plugin\Commerce\PaymentGateway\Squareup $plugin */
     $plugin = $this->plugin;
 
-    $element['#attached']['library'][] = 'commerce_squareup/squareup';
     $element['#attached']['library'][] = 'commerce_squareup/form';
     $element['#attached']['drupalSettings']['commerceSquareup'] = [
       'applicationId' => $plugin->getApplicationId(),
@@ -36,10 +35,10 @@ class PaymentMethodAddForm extends BasePaymentMethodAddForm {
         'class' => ['squareup-card-type'],
       ],
     ];
-    $element['last2'] = [
+    $element['last4'] = [
       '#type' => 'hidden',
       '#attributes' => [
-        'class' => ['squareup-last2'],
+        'class' => ['squareup-last4'],
       ],
     ];
 
