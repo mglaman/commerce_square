@@ -43,7 +43,7 @@ class ConfigureGatewayTest extends CommerceBrowserTestBase {
     $this->assertSession()->addressEquals('admin/commerce/config/payment-gateways/add');
 
     $this->getSession()->getPage()->fillField('Name', 'Square');
-    $this->getSession()->getPage()->checkField('Squareup');
+    $this->getSession()->getPage()->checkField('Square');
     $this->assertSession()->assertWaitOnAjaxRequest();
 
     $this->assertSession()->pageTextContains('Please provide a valid personal access token to select a location ID.');

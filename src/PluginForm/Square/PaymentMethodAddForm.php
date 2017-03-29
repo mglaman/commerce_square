@@ -1,6 +1,6 @@
 <?php
 
-namespace Drupal\commerce_squareup\PluginForm\Squareup;
+namespace Drupal\commerce_squareup\PluginForm\Square;
 
 use Drupal\commerce_payment\PluginForm\PaymentMethodAddForm as BasePaymentMethodAddForm;
 use Drupal\Core\Form\FormStateInterface;
@@ -14,33 +14,35 @@ class PaymentMethodAddForm extends BasePaymentMethodAddForm {
    * {@inheritdoc}
    */
   public function buildCreditCardForm(array $element, FormStateInterface $form_state) {
-    /** @var \Drupal\commerce_squareup\Plugin\Commerce\PaymentGateway\Squareup $plugin */
+    /** @var \Drupal\commerce_squareup\Plugin\Commerce\PaymentGateway\Square $plugin */
     $plugin = $this->plugin;
+    $configuration = $plugin->getConfiguration();
 
-    $element['#attached']['library'][] = 'commerce_squareup/squareup';
     $element['#attached']['library'][] = 'commerce_squareup/form';
     $element['#attached']['drupalSettings']['commerceSquareup'] = [
-      'applicationId' => $plugin->getApplicationId(),
+      'applicationId' => $configuration['app_id'],
     ];
     $element['#attributes']['class'][] = 'squareup-form';
     // Populated by the JS library.
     $element['payment_method_nonce'] = [
       '#type' => 'hidden',
-      '#attributes' => [
-        'class' => ['squareup-nonce'],
-      ],
+      '#attributes' => ['class' => ['squareup-nonce']],
     ];
     $element['card_type'] = [
       '#type' => 'hidden',
-      '#attributes' => [
-        'class' => ['squareup-card-type'],
-      ],
+      '#attributes' => ['class' => ['squareup-card-type']],
     ];
-    $element['last2'] = [
+    $element['last4'] = [
       '#type' => 'hidden',
-      '#attributes' => [
-        'class' => ['squareup-last2'],
-      ],
+      '#attributes' => ['class' => ['squareup-last4']],
+    ];
+    $element['exp_month'] = [
+      '#type' => 'hidden',
+      '#attributes' => ['class' => ['squareup-exp-month']],
+    ];
+    $element['exp_year'] = [
+      '#type' => 'hidden',
+      '#attributes' => ['class' => ['squareup-exp-year']],
     ];
 
     $element['number'] = [

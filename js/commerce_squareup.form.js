@@ -3,9 +3,10 @@
  * Defines behaviors for the Squareup payment method form.
  */
 
-(function ($, Drupal, drupalSettings, squareup) {
-
+(function ($, Drupal, drupalSettings) {
   'use strict';
+
+  var commerceSquare;
 
   /**
    * Attaches the commerceSquareForm behavior.
@@ -19,15 +20,28 @@
    */
   Drupal.behaviors.commerceSquareForm = {
     attach: function (context) {
-      var $form = $('.squareup-form', context);
-      if ($form.length > 0) {
-        squareup = new Drupal.commerceSquareup($form, drupalSettings.commerceSquareup);
+      var $squareForm = $(context).find('.squareup-form').once();
+      if ($squareForm.length) {
+        commerceSquare = $squareForm.data('square');
+        if (!commerceSquare) {
+          try {
+            commerceSquare = new Drupal.commerceSquareup($squareForm, drupalSettings.commerceSquareup);
+            $squareForm.data('square', commerceSquare);
+          }
+          catch (e) {
+            alert(e.message);
+          }
+        }
       }
     },
     detach: function (context) {
-      var $form = $('.squareup-form', context);
-      if ($form.length > 0) {
-        squareup.integration.teardown();
+      var $squareForm = $(context).find('.squareup-form').once();
+      if ($squareForm.length > 0) {
+        commerceSquare = $squareForm.data('square');
+        if (commerceSquare) {
+          commerceSquare.removeData('square');
+          $squareForm.closest('form').find('[name="op"]').prop('disabled', false);
+        }
       }
     }
   };
@@ -37,8 +51,16 @@
    *
    * @constructor
    */
-  Drupal.commerceSquareup = function ($form, settings) {
-    this.settings = settings;
+  Drupal.commerceSquareup = function ($squareForm, settings) {
+    var $rootForm = $squareForm.closest('form');
+    var $formSubmit = $rootForm.find('[name="op"]');
+    $formSubmit.prop('disabled', true);
+    $formSubmit.click(function () {
+      $squareForm.find('.messages--error').remove();
+    });
+    $formSubmit.click(requestCardNonce);
+
+
     var paymentForm = new SqPaymentForm({
       applicationId: settings.applicationId,
       inputClass: 'sq-input',
@@ -67,18 +89,18 @@
         // nonce, even if the request failed because of an error.
         cardNonceResponseReceived: function (errors, nonce, cardData) {
           if (errors) {
-            console.log("Encountered errors:");
-             // This logs all errors encountered during nonce generation to the
-            // Javascript console.
             errors.forEach(function (error) {
-              console.log('  ' + error.message);
+              $squareForm.prepend(Drupal.theme('commerceSquareError', error.message));
             });
-          // No errors occurred. Extract the card nonce.
           }
+          // No errors occurred. Extract the card nonce.
           else {
-            alert('Nonce received: ' + nonce);
-            // document.getElementById('card-nonce').value = nonce;
-            // document.getElementById('nonce-form').submit();
+            $squareForm.find('.squareup-nonce').val(nonce);
+            $squareForm.find('.squareup-card-type').val(cardData.card_brand);
+            $squareForm.find('.squareup-last4').val(cardData.last_4);
+            $squareForm.find('.squareup-exp-month').val(cardData.exp_month);
+            $squareForm.find('.squareup-exp-year').val(cardData.exp_year);
+            $rootForm.submit();
           }
         },
 
@@ -117,24 +139,41 @@
         },
 
         paymentFormLoaded: function () {
-         paymentForm.setPostalCode('94103');
+          // @todo allow for people to extend and hook in.
+          $formSubmit.prop('disabled', false);
         }
       }
     });
-
     paymentForm.build();
+
+    // This function is called when a buyer clicks the Submit button on the webpage
+    // to charge their card.
+    function requestCardNonce(event) {
+      // This prevents the Submit button from submitting its associated form.
+      // Instead, clicking the Submit button should tell the SqPaymentForm to generate
+      // a card nonce, which the next line does.
+      event.preventDefault();
+      commerceSquare.getPaymentForm().requestCardNonce();
+    }
+
+    /**
+     *
+     * @returns {SqPaymentForm}
+     */
+    this.getPaymentForm = function () {
+      return paymentForm;
+    };
+
     return this;
   };
 
-  // This function is called when a buyer clicks the Submit button on the webpage
-  // to charge their card.
-  function requestCardNonce(event) {
-    // This prevents the Submit button from submitting its associated form.
-    // Instead, clicking the Submit button should tell the SqPaymentForm to generate
-    // a card nonce, which the next line does.
-    event.preventDefault();
+  $.extend(Drupal.theme, /** @lends Drupal.theme */{
+    commerceSquareError: function (message) {
+      return $('<div role="alert">' +
+        '<div class="messages messages--error">' + message + '</div>' +
+        '</div>'
+      );
+    }
+  });
 
-    paymentForm.requestCardNonce();
-  }
-
-})(jQuery, Drupal, drupalSettings, window.squareup);
+})(jQuery, Drupal, drupalSettings);
