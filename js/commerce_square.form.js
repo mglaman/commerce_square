@@ -60,7 +60,6 @@
     });
     $formSubmit.click(requestCardNonce);
 
-
     var paymentForm = new SqPaymentForm({
       applicationId: settings.applicationId,
       inputClass: 'sq-input',
@@ -169,10 +168,7 @@
 
   $.extend(Drupal.theme, /** @lends Drupal.theme */{
     commerceSquareError: function (message) {
-      return $('<div role="alert">' +
-        '<div class="messages messages--error">' + message + '</div>' +
-        '</div>'
-      );
+      return $('<div role="alert"><div class="messages messages--error">' + message + '</div></div>');
     }
   });
 
