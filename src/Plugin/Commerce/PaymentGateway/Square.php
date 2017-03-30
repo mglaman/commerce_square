@@ -243,6 +243,10 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     if ($capture) {
       $payment->setCapturedTime($result->getTransaction()->getCreatedAt());
     }
+    else {
+      $expires = $this->time->getRequestTime() + (3600 * 24 * 6) - 5;
+      $payment->setAuthorizationExpiresTime($expires);
+    }
     $payment->save();
   }
 
@@ -284,6 +288,54 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     // @todo Currently there are no remote records stored.
     // Delete the local entity.
     $payment_method->delete();
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function capturePayment(PaymentInterface $payment, Price $amount = NULL) {
+    $amount = $amount ?: $payment->getAmount();
+    // Square only accepts integers and not floats.
+    // @see https://docs.connect.squareup.com/api/connect/v2/#workingwithmonetaryamounts
+    $square_amount = \Drupal::getContainer()->get('commerce_price.rounder')->round($amount);
+    $square_amount = $square_amount->multiply('100');
+    list($transaction_id, $tender_id) = explode('|', $payment->getRemoteId());
+
+    try {
+      $result = $this->transactionApi->captureTransaction(
+        $this->configuration['personal_access_token'],
+        $this->configuration['location_id'],
+        $transaction_id
+      );
+    }
+    catch (ApiException $e) {
+      throw ErrorHelper::convertException($e);
+    }
+
+    $payment->state = 'capture_completed';
+    $payment->setAmount($amount);
+    $payment->setCapturedTime($this->time->getRequestTime());
+    $payment->save();
+
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function voidPayment(PaymentInterface $payment) {
+    list($transaction_id, $tender_id) = explode('|', $payment->getRemoteId());
+    try {
+      $result = $this->transactionApi->voidTransaction(
+        $this->configuration['personal_access_token'],
+        $this->configuration['location_id'],
+        $transaction_id
+      );
+    }
+    catch (ApiException $e) {
+      throw ErrorHelper::convertException($e);
+    }
+    $payment->state = 'authorization_voided';
+    $payment->save();
   }
 
   /**
