@@ -4,8 +4,10 @@ namespace Drupal\commerce_square\Plugin\Commerce\PaymentGateway;
 
 use Drupal\commerce\TimeInterface;
 use Drupal\commerce_payment\Exception\HardDeclineException;
+use Drupal\commerce_price\Price;
 use Drupal\commerce_square\ErrorHelper;
 use SquareConnect\Api\LocationApi;
+use SquareConnect\Api\RefundApi;
 use SquareConnect\Api\TransactionApi;
 use Drupal\commerce_payment\Entity\PaymentInterface;
 use Drupal\commerce_payment\Entity\PaymentMethodInterface;
@@ -16,6 +18,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\FormStateInterface;
 use SquareConnect\ApiException;
 use SquareConnect\Model\ChargeRequest;
+use SquareConnect\Model\CreateRefundRequest;
 use SquareConnect\Model\Money;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\Component\Utility\NestedArray;
@@ -41,6 +44,7 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
 
   protected $time;
   protected $transactionApi;
+  protected $refundApi;
 
   /**
    * {@inheritdoc}
@@ -49,6 +53,7 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $entity_type_manager, $payment_type_manager, $payment_method_type_manager);
     $this->time = $time;
     $this->transactionApi = new TransactionApi();
+    $this->refundApi = new RefundApi();
   }
 
   /**
@@ -211,7 +216,8 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     ]));
     $charge_request->setDelayCapture(!$capture);
     $charge_request->setCardNonce($payment_method->getRemoteId());
-    $charge_request->setIdempotencyKey(hash('sha256', $payment_method->getRemoteId()));
+    $charge_request->setIdempotencyKey(uniqid());
+    $charge_request->setBuyerEmailAddress($payment->getOrder()->getEmail());
 
     try {
       $result = $this->transactionApi->charge(
@@ -227,9 +233,12 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
       throw ErrorHelper::convertException($e);
     }
 
+    $transaction = $result->getTransaction();
+    $tender = $transaction->getTenders()[0];
+
     $payment->state = $capture ? 'capture_completed' : 'authorization';
-    $payment->setRemoteId($result->getTransaction()->getId());
-    $payment->setAuthorizedTime($result->getTransaction()->getCreatedAt());
+    $payment->setRemoteId($transaction->getId() . '|' . $tender->getId());
+    $payment->setAuthorizedTime($transaction->getCreatedAt());
     // @todo Find out how long an authorization is valid, set its expiration.
     if ($capture) {
       $payment->setCapturedTime($result->getTransaction()->getCreatedAt());
@@ -275,6 +284,49 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     // @todo Currently there are no remote records stored.
     // Delete the local entity.
     $payment_method->delete();
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function refundPayment(PaymentInterface $payment, Price $amount = NULL) {
+    $amount = $amount ?: $payment->getAmount();
+    // Square only accepts integers and not floats.
+    // @see https://docs.connect.squareup.com/api/connect/v2/#workingwithmonetaryamounts
+    $square_amount = \Drupal::getContainer()->get('commerce_price.rounder')->round($amount);
+    $square_amount = $square_amount->multiply('100');
+
+    list($transaction_id, $tender_id) = explode('|', $payment->getRemoteId());
+    $refund_request = new CreateRefundRequest([
+      'idempotency_key' => uniqid(),
+      'tender_id' => $tender_id,
+      'amount_money' => $square_amount->getNumber(),
+      'reason' => $this->t('Refunded through store backend'),
+    ]);
+
+    try {
+      $result = $this->refundApi->createRefund(
+        $this->configuration['personal_access_token'],
+        $this->configuration['location_id'],
+        $transaction_id,
+        $refund_request
+      );
+    }
+    catch (ApiException $e) {
+      throw ErrorHelper::convertException($e);
+    }
+
+    $old_refunded_amount = $payment->getRefundedAmount();
+    $new_refunded_amount = $old_refunded_amount->add($amount);
+    if ($new_refunded_amount->lessThan($payment->getAmount())) {
+      $payment->state = 'capture_partially_refunded';
+    }
+    else {
+      $payment->state = 'capture_refunded';
+    }
+
+    $payment->setRefundedAmount($new_refunded_amount);
+    $payment->save();
   }
 
   /**
