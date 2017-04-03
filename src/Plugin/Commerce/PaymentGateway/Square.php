@@ -352,8 +352,11 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     $refund_request = new CreateRefundRequest([
       'idempotency_key' => uniqid(),
       'tender_id' => $tender_id,
-      'amount_money' => $square_amount->getNumber(),
-      'reason' => $this->t('Refunded through store backend'),
+      'amount_money' => new Money([
+        'amount' => (int) $square_amount->getNumber(),
+        'currency' => $amount->getCurrencyCode(),
+      ]),
+      'reason' => (string) $this->t('Refunded through store backend'),
     ]);
 
     try {
