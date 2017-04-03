@@ -48,13 +48,13 @@ class ConfigureGatewayTest extends CommerceBrowserTestBase {
 
     $this->assertSession()->pageTextContains('Please provide a valid personal access token to select a location ID.');
     $this->getSession()->getPage()->fillField('Application Name', 'Drupal Commerce 2 Demo');
-    $this->getSession()->getPage()->fillField('Application ID', 'sq0idp-nV_lBSwvmfIEF62s09z0-Q');
-    $this->getSession()->getPage()->fillField('Personal Access Token', 'sq0atp-0N5GE_l_6-IDt4oz1dUXZQ');
-    $this->getSession()->getPage()->fillField('Application ID', 'sq0idp-nV_lBSwvmfIEF62s09z0-Q');
+    $this->getSession()->getPage()->fillField('Application ID', 'sandbox-sq0idp-nV_lBSwvmfIEF62s09z0-Q');
+    $this->getSession()->getPage()->fillField('Personal Access Token', 'sandbox-sq0atb-uEZtx4_Qu36ff-kBTojVNw');
+    $this->getSession()->getPage()->fillField('Application ID', 'sandbox-sq0idp-nV_lBSwvmfIEF62s09z0-Q');
     $this->assertSession()->assertWaitOnAjaxRequest();
 
     $this->assertSession()->fieldExists('Location ID');
-    $this->getSession()->getPage()->selectFieldOption('Location ID', '2QB9VG5WN7WPE');
+    $this->getSession()->getPage()->selectFieldOption('Location ID', 'CBASEGmzMStUzri2iDAveKJhcd8gAQ');
     $this->assertSession()->pageTextNotContains('Please provide a valid personal access token to select a location ID.');
     $this->getSession()->getPage()->pressButton('Save');
 
