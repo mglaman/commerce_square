@@ -55,7 +55,7 @@ class PaymentMethodAddForm extends BasePaymentMethodAddForm {
       '#type' => 'container',
       '#attributes' => [
         'class' => [
-          'credit-card-form__expiration'
+          'credit-card-form__expiration',
         ],
       ],
     ];
