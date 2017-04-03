@@ -51,17 +51,25 @@ class PaymentMethodAddForm extends BasePaymentMethodAddForm {
       '#markup' => '<div id="square-card-number"></div>',
     ];
 
-    $element['expiration'] = [
+    $element['details'] = [
+      '#type' => 'container',
+      '#attributes' => [
+        'class' => [
+          'credit-card-form__expiration'
+        ],
+      ],
+    ];
+    $element['details']['expiration'] = [
       '#type' => 'item',
       '#title' => t('Expiration'),
       '#markup' => '<div id="square-expiration-date"></div>',
     ];
-    $element['cvv'] = [
+    $element['details']['cvv'] = [
       '#type' => 'item',
       '#title' => t('CVV'),
       '#markup' => '<div id="square-cvv"></div>',
     ];
-    $element['postal-code'] = [
+    $element['details']['postal-code'] = [
       '#type' => 'item',
       '#title' => t('Postal code'),
       '#markup' => '<div id="square-postal-code"></div>',
