@@ -71,7 +71,6 @@ class PaymentMethodAddForm extends BasePaymentMethodAddForm {
     ];
     $element['details']['postal-code'] = [
       '#type' => 'item',
-      '#title' => t('Postal code'),
       '#markup' => '<div id="square-postal-code"></div>',
     ];
 
