@@ -152,11 +152,14 @@
       // Instead, clicking the Submit button should tell the SqPaymentForm to generate
       // a card nonce, which the next line does.
       event.preventDefault();
+
+      // Grab postal code.
+      paymentForm.setPostalCode($rootForm.find('input.postal-code').val());
+
       commerceSquare.getPaymentForm().requestCardNonce();
     }
 
     /**
-     *
      * @returns {SqPaymentForm}
      */
     this.getPaymentForm = function () {

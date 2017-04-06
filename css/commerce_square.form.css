@@ -36,3 +36,7 @@
 .sq-input--error {
   border-color: red;
 }
+
+#square-postal-code {
+  display: none;
+}
