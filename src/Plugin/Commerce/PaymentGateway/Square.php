@@ -2,7 +2,7 @@
 
 namespace Drupal\commerce_square\Plugin\Commerce\PaymentGateway;
 
-use Drupal\commerce\TimeInterface;
+use Drupal\Component\Datetime\TimeInterface;
 use Drupal\commerce_payment\Exception\HardDeclineException;
 use Drupal\commerce_price\Price;
 use Drupal\commerce_square\ErrorHelper;
@@ -67,7 +67,7 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
       $container->get('entity_type.manager'),
       $container->get('plugin.manager.commerce_payment_type'),
       $container->get('plugin.manager.commerce_payment_method_type'),
-      $container->get('commerce.time')
+      $container->get('datetime.time')
     );
   }
 
