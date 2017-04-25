@@ -213,7 +213,8 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     $charge_request->setAmountMoney(new Money([
       'amount' => (int) $amount->getNumber(),
       'currency' => $amount->getCurrencyCode(),
-    ]));
+      ]));
+    $charge_request->offsetSet('integration_id', 'sqi_b6ff0cd7acc14f7ab24200041d066ba6');
     $charge_request->setDelayCapture(!$capture);
     $charge_request->setCardNonce($payment_method->getRemoteId());
     $charge_request->setIdempotencyKey(uniqid());
