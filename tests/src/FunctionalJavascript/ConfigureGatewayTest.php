@@ -46,19 +46,21 @@ class ConfigureGatewayTest extends CommerceBrowserTestBase {
     $this->getSession()->getPage()->checkField('Square');
     $this->assertSession()->assertWaitOnAjaxRequest();
 
-    $this->assertSession()->pageTextContains('Please provide a valid personal access token to select a location ID.');
-    $this->getSession()->getPage()->fillField('Application Name', 'Drupal Commerce 2 Demo');
-    $this->getSession()->getPage()->fillField('Application ID', 'sandbox-sq0idp-nV_lBSwvmfIEF62s09z0-Q');
-    $this->getSession()->getPage()->fillField('Personal Access Token', 'sandbox-sq0atb-uEZtx4_Qu36ff-kBTojVNw');
-    $this->getSession()->getPage()->fillField('Application ID', 'sandbox-sq0idp-nV_lBSwvmfIEF62s09z0-Q');
+    $this->assertSession()->pageTextContains('Please provide a valid personal access token to select a test location ID.');
+    $this->assertSession()->pageTextContains('Please provide a valid personal access token to select a live location ID.');
+    $this->getSession()->getPage()->fillField('configuration[app_name]', 'Drupal Commerce 2 Demo');
+    $this->getSession()->getPage()->fillField('configuration[test][app_id]', 'sandbox-sq0idp-nV_lBSwvmfIEF62s09z0-Q');
+    $this->getSession()->getPage()->fillField('configuration[test][personal_access_token]', 'sandbox-sq0atb-uEZtx4_Qu36ff-kBTojVNw');
     $this->assertSession()->assertWaitOnAjaxRequest();
 
-    $this->assertSession()->fieldExists('Location ID');
-    $this->getSession()->getPage()->selectFieldOption('Location ID', 'CBASEGmzMStUzri2iDAveKJhcd8gAQ');
-    $this->assertSession()->pageTextNotContains('Please provide a valid personal access token to select a location ID.');
+    $this->assertSession()->fieldExists('configuration[test][location_wrapper][location_id]');
+    $this->getSession()->getPage()->selectFieldOption('configuration[test][location_wrapper][location_id]', 'CBASEGmzMStUzri2iDAveKJhcd8gAQ');
+    $this->assertSession()->pageTextNotContains('Please provide a valid personal access token to select a test location ID.');
+    $this->assertSession()->pageTextContains('Please provide a valid personal access token to select a live location ID.');
     $this->getSession()->getPage()->pressButton('Save');
 
-    $this->assertSession()->pageTextContains('Square');
+    // Without production credentials the form submission fails.
+    $this->assertSession()->pageTextContains('Add payment gateway');
   }
 
   /**

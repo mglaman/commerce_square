@@ -75,12 +75,15 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
    * {@inheritdoc}
    */
   public function defaultConfiguration() {
-    return [
+    $default_configuration = [
       'app_name' => '',
-      'app_id' => '',
-      'personal_access_token' => '',
-      'location_id' => '',
-    ] + parent::defaultConfiguration();
+    ];
+    foreach ($this->getSupportedModes() as $mode => $object) {
+      $default_configuration[$mode . '_app_id'] = '';
+      $default_configuration[$mode . '_personal_access_token'] = '';
+      $default_configuration[$mode . '_location_id'] = '';
+    }
+    return $default_configuration + parent::defaultConfiguration();
   }
 
   /**
@@ -95,64 +98,74 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
       '#default_value' => $this->configuration['app_name'],
       '#required' => TRUE,
     ];
-    $form['app_id'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('Application ID'),
-      '#default_value' => $this->configuration['app_id'],
-      '#required' => TRUE,
-    ];
-    $form['personal_access_token'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('Personal Access Token'),
-      '#default_value' => $this->configuration['personal_access_token'],
-      '#required' => TRUE,
-      '#ajax' => [
-        'wrapper' => 'square-location-wrapper',
-        'callback' => [$this, 'locationsAjax'],
-        // Needs the patch in https://www.drupal.org/node/2627788.
-        'disable-refocus' => TRUE,
-      ],
-    ];
-    $form['location_wrapper'] = [
-      '#type' => 'container',
-      '#attributes' => ['id' => 'square-location-wrapper'],
-    ];
-    $values = $form_state->getValues();
-    $personal_access_token = NestedArray::getValue($values, $form['#parents'])['personal_access_token'];
-    if (empty($personal_access_token)) {
-      $personal_access_token = $this->configuration['personal_access_token'];
-    }
-    $location_markup = TRUE;
-    if (!empty($personal_access_token)) {
-      $location_api = new LocationApi();
-      try {
-        $locations = $location_api->listLocations($personal_access_token);
-        if (!empty($locations)) {
-          $location_options = $locations->getLocations();
-          $options = [];
-          foreach ($location_options as $location_option) {
-            $options[$location_option->getId()] = $location_option->getName();
-          }
-
-          $form['location_wrapper']['location_id'] = [
-            '#type' => 'select',
-            '#title' => $this->t('Location ID'),
-            '#default_value' => $this->configuration['location_id'],
-            '#required' => TRUE,
-            '#options' => $options,
-          ];
-        }
-        $location_markup = FALSE;
-      }
-      catch (\Exception $e) {
-      }
-
-    }
-    if ($location_markup) {
-      $form['location_wrapper']['location_id'] = [
-        '#markup' => $this->t('Please provide a valid personal access token to select a location ID.'),
+    foreach ($this->getSupportedModes() as $mode => $object) {
+      $form[$mode] = [
+        '#type' => 'fieldset',
+        '#collapsible' => FALSE,
+        '#collapsed' => FALSE,
+        '#title' => $this->t('Production credentials'),
+        '#tree' => TRUE,
       ];
+      $form[$mode]['app_id'] = [
+        '#type' => 'textfield',
+        '#title' => $this->t('Application ID'),
+        '#default_value' => $this->configuration[$mode . '_app_id'],
+        '#required' => TRUE,
+      ];
+      $form[$mode]['personal_access_token'] = [
+        '#type' => 'textfield',
+        '#title' => $this->t('Personal Access Token'),
+        '#default_value' => $this->configuration[$mode . '_personal_access_token'],
+        '#required' => TRUE,
+        '#ajax' => [
+          'wrapper' => 'square-' . $mode . '-location-wrapper',
+          'callback' => [$this, 'locationsAjax'],
+          'disable-refocus' => TRUE,
+        ],
+      ];
+      $form[$mode]['location_wrapper'] = [
+        '#type' => 'container',
+        '#attributes' => ['id' => 'square-' . $mode . '-location-wrapper'],
+      ];
+      $values = $form_state->getValues();
+      $personal_access_token = NestedArray::getValue($values, $form['#parents'])[$mode]['personal_access_token'];
+      if (empty($personal_access_token)) {
+        $personal_access_token = $this->configuration[$mode . '_personal_access_token'];
+      }
+      $location_markup = TRUE;
+      if (!empty($personal_access_token)) {
+        $location_api = new LocationApi();
+        try {
+          $locations = $location_api->listLocations($personal_access_token);
+          if (!empty($locations)) {
+            $location_options = $locations->getLocations();
+            $options = [];
+            foreach ($location_options as $location_option) {
+              $options[$location_option->getId()] = $location_option->getName();
+            }
+
+            $form[$mode]['location_wrapper']['location_id'] = [
+              '#type' => 'select',
+              '#title' => $this->t('Location ID'),
+              '#default_value' => $this->configuration[$mode . '_location_id'],
+              '#required' => TRUE,
+              '#options' => $options,
+            ];
+          }
+          $location_markup = FALSE;
+        }
+        catch (\Exception $e) {
+        }
+
+      }
+      if ($location_markup) {
+        $form[$mode]['location_wrapper']['location_id'] = [
+          '#markup' => $this->t('Please provide a valid personal access token to select a @mode location ID.', ['@mode' => $mode]),
+        ];
+      }
     }
+    $form['test']['#title'] = $this->t('Sandbox credentials');
+
     return $form;
   }
 
@@ -160,7 +173,11 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
    * AJAX callback for the configuration form.
    */
   public function locationsAjax(array &$form, FormStateInterface $form_state) {
-    return $form['configuration']['location_wrapper'];
+    $triggering_element = $form_state->getTriggeringElement();
+    $parents = $triggering_element['#parents'];
+    array_pop($parents);
+    $credentials = NestedArray::getValue($form, $parents);
+    return $credentials['location_wrapper'];
   }
 
   /**
@@ -169,8 +186,10 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
   public function validateConfigurationForm(array &$form, FormStateInterface $form_state) {
     parent::validateConfigurationForm($form, $form_state);
     $values = $form_state->getValue($form['#parents']);
-    if (empty($values['location_wrapper']['location_id'])) {
-      $form_state->setErrorByName('configuration[personal_access_token]', $this->t('Please provide a valid personal access token to select a location ID.'));
+    foreach ($this->getSupportedModes() as $mode => $object) {
+      if (empty($values[$mode]['location_wrapper']['location_id'])) {
+        $form_state->setErrorByName('configuration[' . $mode . '_personal_access_token]', $this->t('Please provide a valid personal access token to select a @mode location ID.', ['@mode' => $mode]));
+      }
     }
   }
 
@@ -183,9 +202,12 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     if (!$form_state->getErrors()) {
       $values = $form_state->getValue($form['#parents']);
       $this->configuration['app_name'] = $values['app_name'];
-      $this->configuration['app_id'] = $values['app_id'];
-      $this->configuration['personal_access_token'] = $values['personal_access_token'];
-      $this->configuration['location_id'] = $values['location_wrapper']['location_id'];
+
+      foreach ($this->getSupportedModes() as $mode => $object) {
+        $this->configuration[$mode . '_app_id'] = $values[$mode]['app_id'];
+        $this->configuration[$mode . '_personal_access_token'] = $values[$mode]['personal_access_token'];
+        $this->configuration[$mode . '_location_id'] = $values[$mode]['location_wrapper']['location_id'];
+      }
     }
   }
 
@@ -220,10 +242,11 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     $charge_request->setIdempotencyKey(uniqid());
     $charge_request->setBuyerEmailAddress($payment->getOrder()->getEmail());
 
+    $mode = $this->getMode();
     try {
       $result = $this->transactionApi->charge(
-        $this->configuration['personal_access_token'],
-        $this->configuration['location_id'],
+        $this->configuration[$mode . '_personal_access_token'],
+        $this->configuration[$mode . '_location_id'],
         $charge_request
       );
       if ($result->getErrors()) {
@@ -302,10 +325,11 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     $square_amount = $square_amount->multiply('100');
     list($transaction_id, $tender_id) = explode('|', $payment->getRemoteId());
 
+    $mode = $this->getMode();
     try {
       $result = $this->transactionApi->captureTransaction(
-        $this->configuration['personal_access_token'],
-        $this->configuration['location_id'],
+        $this->configuration[$mode . '_personal_access_token'],
+        $this->configuration[$mode . '_location_id'],
         $transaction_id
       );
     }
@@ -325,10 +349,11 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
    */
   public function voidPayment(PaymentInterface $payment) {
     list($transaction_id, $tender_id) = explode('|', $payment->getRemoteId());
+    $mode = $this->getMode();
     try {
       $result = $this->transactionApi->voidTransaction(
-        $this->configuration['personal_access_token'],
-        $this->configuration['location_id'],
+        $this->configuration[$mode . '_personal_access_token'],
+        $this->configuration[$mode . '_location_id'],
         $transaction_id
       );
     }
@@ -360,10 +385,11 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
       'reason' => (string) $this->t('Refunded through store backend'),
     ]);
 
+    $mode = $this->getMode();
     try {
       $result = $this->refundApi->createRefund(
-        $this->configuration['personal_access_token'],
-        $this->configuration['location_id'],
+        $this->configuration[$mode . '_personal_access_token'],
+        $this->configuration[$mode . '_location_id'],
         $transaction_id,
         $refund_request
       );
