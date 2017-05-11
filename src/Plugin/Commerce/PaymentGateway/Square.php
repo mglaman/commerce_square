@@ -54,6 +54,8 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     $this->time = $time;
     $this->transactionApi = new TransactionApi();
     $this->refundApi = new RefundApi();
+    $this->pluginDefinition['modes']['test'] = $this->t('Sandbox');
+    $this->pluginDefinition['modes']['live'] = $this->t('Production');
   }
 
   /**
@@ -103,7 +105,7 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
         '#type' => 'fieldset',
         '#collapsible' => FALSE,
         '#collapsed' => FALSE,
-        '#title' => $this->t('Production credentials'),
+        '#title' => $this->t('@mode credentials', ['@mode' => $this->pluginDefinition['modes'][$mode]]),
         '#tree' => TRUE,
       ];
       $form[$mode]['app_id'] = [
@@ -160,11 +162,10 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
       }
       if ($location_markup) {
         $form[$mode]['location_wrapper']['location_id'] = [
-          '#markup' => $this->t('Please provide a valid personal access token to select a @mode location ID.', ['@mode' => $mode]),
+          '#markup' => $this->t('Please provide a valid personal access token to select a @mode location ID.', ['@mode' => $this->pluginDefinition['modes'][$mode]]),
         ];
       }
     }
-    $form['test']['#title'] = $this->t('Sandbox credentials');
 
     return $form;
   }
