@@ -53,6 +53,7 @@
    */
   Drupal.commerceSquare = function ($squareForm, settings) {
     var $rootForm = $squareForm.closest('form');
+    var $parentDrupalSelector = $rootForm.find('[data-drupal-selector="' + settings.drupalSelector + '"]');
     var $formSubmit = $rootForm.find('[name="op"]');
     $formSubmit.prop('disabled', true);
     $formSubmit.click(function () {
@@ -154,7 +155,7 @@
       event.preventDefault();
 
       // Grab postal code.
-      paymentForm.setPostalCode($rootForm.find('input.postal-code').val());
+      paymentForm.setPostalCode($parentDrupalSelector.parent().find('input.postal-code').val());
 
       commerceSquare.getPaymentForm().requestCardNonce();
     }

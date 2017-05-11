@@ -45,22 +45,23 @@ class ConfigureGatewayTest extends CommerceBrowserTestBase {
     $this->getSession()->getPage()->fillField('Name', 'Square');
     $this->getSession()->getPage()->checkField('Square');
     $this->assertSession()->assertWaitOnAjaxRequest();
+    $this->getSession()->getPage()->fillField('id', 'square');
 
-    $this->assertSession()->pageTextContains('Please provide a valid personal access token to select a Sandbox location ID.');
-    $this->assertSession()->pageTextContains('Please provide a valid personal access token to select a Production location ID.');
     $this->getSession()->getPage()->fillField('configuration[app_name]', 'Drupal Commerce 2 Demo');
-    $this->getSession()->getPage()->fillField('configuration[test][app_id]', 'sandbox-sq0idp-nV_lBSwvmfIEF62s09z0-Q');
-    $this->getSession()->getPage()->fillField('configuration[test][personal_access_token]', 'sandbox-sq0atb-uEZtx4_Qu36ff-kBTojVNw');
-    $this->assertSession()->assertWaitOnAjaxRequest();
+    $this->getSession()->getPage()->fillField('configuration[app_secret]', 'fluff');
 
+
+    $this->getSession()->getPage()->fillField('configuration[test][app_id]', 'sandbox-sq0idp-nV_lBSwvmfIEF62s09z0-Q');
+    $this->getSession()->getPage()->fillField('configuration[test][access_token]', 'sandbox-sq0atb-uEZtx4_Qu36ff-kBTojVNw');
+    $this->assertSession()->assertWaitOnAjaxRequest();
     $this->assertSession()->fieldExists('configuration[test][location_wrapper][location_id]');
-    $this->getSession()->getPage()->selectFieldOption('configuration[test][location_wrapper][location_id]', 'CBASEGmzMStUzri2iDAveKJhcd8gAQ');
-    $this->assertSession()->pageTextNotContains('Please provide a valid personal access token to select a Sandbox location ID.');
-    $this->assertSession()->pageTextContains('Please provide a valid personal access token to select a Production location ID.');
+    $this->getSession()->getPage()->selectFieldOption('configuration[test][location_wrapper][location_id]', 'CBASEHEnLmDB5kndjDx8AMlxPKAgAQ');
+
+    $this->getSession()->getPage()->fillField('configuration[live][app_id]', 'sq0idp-nV_lBSwvmfIEF62s09z0-Q');
     $this->getSession()->getPage()->pressButton('Save');
 
-    // Without production credentials the form submission fails.
-    $this->assertSession()->pageTextContains('Add payment gateway');
+    $is_squareup = strpos($this->getSession()->getCurrentUrl(), 'squareup.com');
+    $this->assertTrue($is_squareup !== FALSE);
   }
 
   /**
@@ -71,6 +72,30 @@ class ConfigureGatewayTest extends CommerceBrowserTestBase {
    */
   public function assertSession($name = NULL) {
     return new JSWebAssert($this->getSession($name), $this->baseUrl);
+  }
+
+  /**
+   * Creates a screenshot.
+   *
+   * @param string $filename
+   *   The file name of the resulting screenshot. If using the default phantomjs
+   *   driver then this should be a JPG filename.
+   * @param bool $set_background_color
+   *   (optional) By default this method will set the background color to white.
+   *   Set to FALSE to override this behaviour.
+   *
+   * @throws \Behat\Mink\Exception\UnsupportedDriverActionException
+   *   When operation not supported by the driver.
+   * @throws \Behat\Mink\Exception\DriverException
+   *   When the operation cannot be done.
+   */
+  protected function createScreenshot($filename, $set_background_color = TRUE) {
+    $session = $this->getSession();
+    if ($set_background_color) {
+      $session->executeScript("document.body.style.backgroundColor = 'white';");
+    }
+    $image = $session->getScreenshot();
+    file_put_contents($filename, $image);
   }
 
 }

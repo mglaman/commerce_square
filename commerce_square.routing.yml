@@ -1,0 +1,7 @@
+commerce_square.oauth.obtain:
+  path: '/admin/commerce_square/oauth/obtain'
+  defaults:
+    _controller: '\Drupal\commerce_square\Controller\OauthToken::obtain'
+    _title: 'Obtain Merchant Token'
+  requirements:
+    _custom_access: '\Drupal\commerce_square\Controller\OauthToken::obtainAccess'

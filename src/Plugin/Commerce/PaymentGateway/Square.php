@@ -22,6 +22,9 @@ use SquareConnect\Model\CreateRefundRequest;
 use SquareConnect\Model\Money;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\Component\Utility\NestedArray;
+use Drupal\Core\Url;
+use Drupal\Core\Routing\TrustedRedirectResponse;
+use Psr\Http\Message\ResponseInterface;
 
 /**
  * Provides the Square payment gateway.
@@ -79,11 +82,13 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
   public function defaultConfiguration() {
     $default_configuration = [
       'app_name' => '',
+      'app_secret' => '',
+      'live_access_token_expiry' => '',
     ];
     foreach ($this->getSupportedModes() as $mode => $object) {
       $default_configuration[$mode . '_app_id'] = '';
-      $default_configuration[$mode . '_personal_access_token'] = '';
       $default_configuration[$mode . '_location_id'] = '';
+      $default_configuration[$mode . '_access_token'] = '';
     }
     return $default_configuration + parent::defaultConfiguration();
   }
@@ -100,45 +105,91 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
       '#default_value' => $this->configuration['app_name'],
       '#required' => TRUE,
     ];
+    $form['app_secret'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Application Secret'),
+      '#description' => $this->t('You can get this by selecting your app <a href="https://connect.squareup.com/apps">here</a> and clicking on the OAuth tab.'),
+      '#default_value' => $this->configuration['app_secret'],
+      '#required' => TRUE,
+    ];
+
     foreach ($this->getSupportedModes() as $mode => $object) {
       $form[$mode] = [
         '#type' => 'fieldset',
+        '#description' => $this->t('You can get these by selecting your app <a href="https://connect.squareup.com/apps">here</a>.'),
         '#collapsible' => FALSE,
         '#collapsed' => FALSE,
         '#title' => $this->t('@mode credentials', ['@mode' => $this->pluginDefinition['modes'][$mode]]),
         '#tree' => TRUE,
       ];
+    }
+    $form['live']['#description'] = t('You can get your Application ID by going <a href="https://connect.squareup.com/apps">here</a>, and selecting your application. You will also need to configure your OAuth Redirect URL. Click the OAuth tab and type "https://example.com/admin/commerce_square/oauth/obtain" into the "Redirect URL" field (replace "example.com" with the domain of your Drupal install).');
+
+    $form['test']['access_token'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Sandbox Access Token'),
+      '#default_value' => $this->configuration['test_access_token'],
+      '#required' => TRUE,
+      '#ajax' => [
+        'wrapper' => 'square-test-location-wrapper',
+        'callback' => [$this, 'locationsAjax'],
+        'disable-refocus' => TRUE,
+      ],
+      '#weight' => 10,
+    ];
+
+    $code = \Drupal::request()->query->get('code');
+    $app_id = $this->configuration['live_app_id'];
+    $app_secret = $this->configuration['app_secret'];
+    if (empty($this->configuration['live_access_token'])) {
+      if (!empty($code) && !empty($app_id) && !empty($app_secret)) {
+        $form['help'] = [
+          '#markup' => $this->t('Second step of payment gateway creation: please select production Location.'),
+          '#weight' => -10,
+        ];
+        $client = \Drupal::httpClient();
+        // We can send this request only once to square.
+        $response = $client->post('https://connect.squareup.com/oauth2/token', [
+          'json' => [
+            'client_id' => $app_id,
+            'client_secret' => $app_secret,
+            'code' =>  $code,
+          ],
+        ]);
+        $this->processTokenResponse($response);
+      }
+      else {
+        $form['help'] = [
+          '#markup' => $this->t('First step of payment gateway creation. After clicking save you will be redirected to Square to retrieve a token, then redirected back here to finish the payment gateway creation and select a Location.'),
+          '#weight' => -10,
+        ];
+      }
+    }
+
+    foreach ($this->getSupportedModes() as $mode => $object) {
       $form[$mode]['app_id'] = [
         '#type' => 'textfield',
         '#title' => $this->t('Application ID'),
         '#default_value' => $this->configuration[$mode . '_app_id'],
         '#required' => TRUE,
       ];
-      $form[$mode]['personal_access_token'] = [
-        '#type' => 'textfield',
-        '#title' => $this->t('Personal Access Token'),
-        '#default_value' => $this->configuration[$mode . '_personal_access_token'],
-        '#required' => TRUE,
-        '#ajax' => [
-          'wrapper' => 'square-' . $mode . '-location-wrapper',
-          'callback' => [$this, 'locationsAjax'],
-          'disable-refocus' => TRUE,
-        ],
-      ];
+
       $form[$mode]['location_wrapper'] = [
         '#type' => 'container',
         '#attributes' => ['id' => 'square-' . $mode . '-location-wrapper'],
+        '#weight' => 20,
       ];
       $values = $form_state->getValues();
-      $personal_access_token = NestedArray::getValue($values, $form['#parents'])[$mode]['personal_access_token'];
-      if (empty($personal_access_token)) {
-        $personal_access_token = $this->configuration[$mode . '_personal_access_token'];
+      $access_token = NestedArray::getValue($values, $form['#parents'])[$mode]['access_token'];
+      if (empty($access_token)) {
+        $access_token = $this->configuration[$mode . '_access_token'];
       }
       $location_markup = TRUE;
-      if (!empty($personal_access_token)) {
+      if (!empty($access_token)) {
         $location_api = new LocationApi();
         try {
-          $locations = $location_api->listLocations($personal_access_token);
+          $this->renewAccessToken();
+          $locations = $location_api->listLocations($access_token);
           if (!empty($locations)) {
             $location_options = $locations->getLocations();
             $options = [];
@@ -153,20 +204,18 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
               '#required' => TRUE,
               '#options' => $options,
             ];
+            $location_markup = FALSE;
           }
-          $location_markup = FALSE;
         }
         catch (\Exception $e) {
         }
-
       }
-      if ($location_markup) {
+      if ($location_markup && 'test' === $mode) {
         $form[$mode]['location_wrapper']['location_id'] = [
-          '#markup' => $this->t('Please provide a valid personal access token to select a @mode location ID.', ['@mode' => $this->pluginDefinition['modes'][$mode]]),
+          '#markup' => $this->t('Please provide a valid access token to select a @mode location ID.', ['@mode' => $mode]),
         ];
       }
     }
-
     return $form;
   }
 
@@ -182,16 +231,67 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
   }
 
   /**
+   * Processes a retrieved token response.
+   *
+   * Used both when getting a token for the first time and also when renewing
+   * it.
+   *
+   * @param \Psr\Http\Message\ResponseInterface $response
+   */
+  protected function processTokenResponse($response) {
+    $response_body = json_decode($response->getBody());
+    if (!empty($response_body->access_token)) {
+      $this->configuration['live_access_token'] = $response_body->access_token;
+      // Save the gateway entity right away to make sure we send the above
+      // request only once to Square.
+      $gateway= $this->entityTypeManager
+        ->getStorage('commerce_payment_gateway')
+        ->load($this->entityId);
+      $configuration = $gateway->get('configuration');
+      $configuration['live_access_token'] = $response_body->access_token;
+      $configuration['live_access_token_expiry'] = strtotime($response_body->expires_at);
+      $gateway->set('configuration', $configuration);
+      $gateway->save();
+    }
+  }
+
+  /**
+   * Renew an access token if it has expired.
+   */
+  public function renewAccessToken() {
+    if (empty($this->configuration['live_app_id']) || empty($this->configuration['live_access_token'])) {
+      return;
+    }
+    if (!empty($this->configuration['live_access_token_expiry']) && $this->configuration['live_access_token_expiry'] < \Drupal::time()->getRequestTime()) {
+      $client = \Drupal::httpClient();
+      // We can send this request only once to square.
+      try {
+        $response = $client->post('https://connect.squareup.com/oauth2/clients/' . $this->configuration['live_app_id'] . '/access-token/renew', [
+          'json' => [
+            'access_token' => $this->configuration['live_access_token'],
+          ],
+        ]);
+      }
+      catch (\Exception $e) {
+        throw ErrorHelper::convertException($e);
+      }
+      $this->processTokenResponse($response);
+    }
+ }
+
+  /**
    * {@inheritdoc}
    */
   public function validateConfigurationForm(array &$form, FormStateInterface $form_state) {
     parent::validateConfigurationForm($form, $form_state);
     $values = $form_state->getValue($form['#parents']);
-    foreach ($this->getSupportedModes() as $mode => $object) {
-      if (empty($values[$mode]['location_wrapper']['location_id'])) {
-        $form_state->setErrorByName('configuration[' . $mode . '_personal_access_token]', $this->t('Please provide a valid personal access token to select a @mode location ID.', ['@mode' => $mode]));
-      }
+    if (empty($values['test']['location_wrapper']['location_id'])) {
+      $form_state->setErrorByName('configuration[test_access_token]', $this->t('Please provide a valid application sandbox token to select a test location ID.'));
     }
+    if (empty($values['live']['location_wrapper']['location_id']) && !empty($this->getConfiguration()['live_access_token'])) {
+      $form_state->setErrorByName('configuration[test_access_token]', $this->t('Please perform the OAuth flow to get an access token and to select a test location ID.'));
+    }
+
   }
 
   /**
@@ -203,12 +303,30 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     if (!$form_state->getErrors()) {
       $values = $form_state->getValue($form['#parents']);
       $this->configuration['app_name'] = $values['app_name'];
+      $this->configuration['app_secret'] = $values['app_secret'];
 
       foreach ($this->getSupportedModes() as $mode => $object) {
         $this->configuration[$mode . '_app_id'] = $values[$mode]['app_id'];
-        $this->configuration[$mode . '_personal_access_token'] = $values[$mode]['personal_access_token'];
         $this->configuration[$mode . '_location_id'] = $values[$mode]['location_wrapper']['location_id'];
       }
+      // The live access token is saved in ::buildConfigurationForm().
+      $this->configuration['test_access_token'] = $values['test']['access_token'];
+    }
+
+    // We obtain the live access token via OAuth. Sandbox uses the
+    // omnipotent personal access token.
+    if (!empty($this->configuration['live_app_id']) && empty($this->configuration['live_access_token'])) {
+      $options = [
+        'absolute' => TRUE,
+        'query' => [
+          'client_id' => $this->configuration['live_app_id'],
+          'state' => \Drupal::csrfToken()->get() . ' ' . $this->entityId,
+          'scope' => 'MERCHANT_PROFILE_READ PAYMENTS_READ PAYMENTS_WRITE CUSTOMERS_READ CUSTOMERS_WRITE',
+        ],
+      ];
+
+      $url = Url::fromUri('https://connect.squareup.com/oauth2/authorize', $options);
+      $form_state->setResponse(new TrustedRedirectResponse($url->toString()));
     }
   }
 
@@ -236,7 +354,7 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     $charge_request->setAmountMoney(new Money([
       'amount' => (int) $amount->getNumber(),
       'currency' => $amount->getCurrencyCode(),
-      ]));
+    ]));
     $charge_request->offsetSet('integration_id', 'sqi_b6ff0cd7acc14f7ab24200041d066ba6');
     $charge_request->setDelayCapture(!$capture);
     $charge_request->setCardNonce($payment_method->getRemoteId());
@@ -246,7 +364,7 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     $mode = $this->getMode();
     try {
       $result = $this->transactionApi->charge(
-        $this->configuration[$mode . '_personal_access_token'],
+        $this->configuration[$mode . '_access_token'],
         $this->configuration[$mode . '_location_id'],
         $charge_request
       );
@@ -329,7 +447,7 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     $mode = $this->getMode();
     try {
       $result = $this->transactionApi->captureTransaction(
-        $this->configuration[$mode . '_personal_access_token'],
+        $this->configuration[$mode . '_access_token'],
         $this->configuration[$mode . '_location_id'],
         $transaction_id
       );
@@ -353,7 +471,7 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     $mode = $this->getMode();
     try {
       $result = $this->transactionApi->voidTransaction(
-        $this->configuration[$mode . '_personal_access_token'],
+        $this->configuration[$mode . '_access_token'],
         $this->configuration[$mode . '_location_id'],
         $transaction_id
       );
@@ -389,7 +507,7 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     $mode = $this->getMode();
     try {
       $result = $this->refundApi->createRefund(
-        $this->configuration[$mode . '_personal_access_token'],
+        $this->configuration[$mode . '_access_token'],
         $this->configuration[$mode . '_location_id'],
         $transaction_id,
         $refund_request

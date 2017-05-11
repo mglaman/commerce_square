@@ -4,12 +4,27 @@ commerce_payment.commerce_payment_gateway.plugin.square:
     app_name:
       type: string
       label: 'Application Name'
-    app_id:
+    app_secret:
       type: string
-      label: 'Application ID'
-    personal_access_token:
+      label: 'Application Secret'
+    test_app_id:
+      type: string
+      label: 'Sandbox Application ID'
+    test_location_id:
+      type: string
+      label: 'Test Location ID'
+    test_access_token:
+      type: string
+      label: 'Test Access Token'
+    live_app_id:
+      type: string
+      label: 'Live Application ID'
+    live_location_id:
+      type: string
+      label: 'Live Location ID'
+    live_access_token:
       type: string
       label: 'Personal Access Token'
-    location_id:
+    live_access_token_expiry:
       type: string
-      label: 'Location ID'
+      label: 'Token expiration'

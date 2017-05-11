@@ -1,0 +1,24 @@
+<?php
+
+/**
+ * @file
+ * commerce_square module file.
+ */
+
+/**
+ * Implements hook_cron().
+ */
+function commerce_square_cron() {
+  // Renew square token ids.
+  $gateway_ids = \Drupal::entityQuery('commerce_payment_gateway')
+    ->execute();
+  $controller = \Drupal::entityTypeManager()->getStorage('commerce_payment_gateway');
+  foreach ($gateway_ids as $gateway_id) {
+    $gateway =  $controller->load($gateway_id);
+    /** @var $plugin Drupal\commerce_square\Plugin\Commerce\PaymentGateway\Square */
+    $plugin = $gateway->getPlugin();
+    if ($plugin->getPluginId() == 'square') {
+      $plugin->renewAccessToken();
+    }
+  }
+}

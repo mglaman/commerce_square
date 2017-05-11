@@ -18,9 +18,11 @@ class PaymentMethodAddForm extends BasePaymentMethodAddForm {
     $plugin = $this->plugin;
     $configuration = $plugin->getConfiguration();
 
+    $mode = $configuration['mode'];
     $element['#attached']['library'][] = 'commerce_square/form';
     $element['#attached']['drupalSettings']['commerceSquare'] = [
-      'applicationId' => $configuration['app_id'],
+      'applicationId' => $configuration[$mode . '_app_id'],
+      'drupalSelector' => 'edit-' . str_replace('_', '-', implode('-', $element['#parents'])),
     ];
     $element['#attributes']['class'][] = 'square-form';
     // Populated by the JS library.
