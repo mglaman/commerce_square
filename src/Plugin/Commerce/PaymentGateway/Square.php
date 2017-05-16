@@ -6,6 +6,7 @@ use Drupal\Component\Datetime\TimeInterface;
 use Drupal\commerce_payment\Exception\HardDeclineException;
 use Drupal\commerce_price\Price;
 use Drupal\commerce_square\ErrorHelper;
+use Drupal\Component\Serialization\Json;
 use SquareConnect\Api\LocationApi;
 use SquareConnect\Api\RefundApi;
 use SquareConnect\Api\TransactionApi;
@@ -16,10 +17,12 @@ use Drupal\commerce_payment\PaymentTypeManager;
 use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\OnsitePaymentGatewayBase;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\FormStateInterface;
+use SquareConnect\ApiClient;
 use SquareConnect\ApiException;
 use SquareConnect\Model\ChargeRequest;
 use SquareConnect\Model\CreateRefundRequest;
 use SquareConnect\Model\Money;
+use SquareConnect\ObjectSerializer;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\Component\Utility\NestedArray;
 use Drupal\Core\Url;
@@ -362,15 +365,61 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     $charge_request->setBuyerEmailAddress($payment->getOrder()->getEmail());
 
     $mode = $this->getMode();
+    // Since the SDK does not support `integration_id`, we must call it direct.
     try {
-      $result = $this->transactionApi->charge(
-        $this->configuration[$mode . '_access_token'],
-        $this->configuration[$mode . '_location_id'],
-        $charge_request
+      $api_client = $this->transactionApi->getApiClient();
+      $resourcePath = "/v2/locations/{location_id}/transactions";
+      $queryParams = [];
+      $headerParams = [];
+      $headerParams['Accept'] = ApiClient::selectHeaderAccept(['application/json']);
+      $headerParams['Content-Type'] = ApiClient::selectHeaderContentType(['application/json']);
+      $headerParams['Authorization'] = $api_client->getSerializer()->toHeaderValue($this->configuration[$mode . '_access_token']);
+
+      $resourcePath = str_replace(
+        '{location_id}',
+        $api_client->getSerializer()->toPathValue($this->configuration[$mode . '_location_id']),
+        $resourcePath
       );
-      if ($result->getErrors()) {
-        // @todo check.
+
+      $charge_request = $charge_request->__toString();
+      // The `integration_id` is only valid when live.
+      if ($mode == 'live') {
+        $charge_request = json_decode($charge_request, TRUE);
+        $charge_request['integration_id'] = 'sqi_b6ff0cd7acc14f7ab24200041d066ba6';
+        $charge_request = json_encode($charge_request, JSON_PRETTY_PRINT);
       }
+
+      try {
+        list($response, $statusCode, $httpHeader) = $api_client->callApi(
+          $resourcePath, 'POST',
+          $queryParams, $charge_request,
+          $headerParams, '\SquareConnect\Model\ChargeResponse'
+        );
+        if (!$response) {
+          return [NULL, $statusCode, $httpHeader];
+        }
+
+        /** @var \SquareConnect\Model\ChargeResponse $result */
+        $result = ObjectSerializer::deserialize($response, '\SquareConnect\Model\ChargeResponse', $httpHeader);
+      }
+      catch (ApiException $e) {
+        switch ($e->getCode()) {
+          case 200:
+            $data = ObjectSerializer::deserialize($e->getResponseBody(), '\SquareConnect\Model\ChargeResponse', $e->getResponseHeaders());
+            $e->setResponseObject($data);
+            break;
+        }
+
+        throw $e;
+      }
+
+      // @todo Use once SDK supports `integration_id`
+      // $result = $this->transactionApi->charge(
+      // $this->configuration[$mode . '_access_token'],
+      // $this->configuration[$mode . '_location_id'],
+      // $charge_request
+      // );
+      // if ($result->getErrors()) { }
     }
     catch (ApiException $e) {
       throw ErrorHelper::convertException($e);
