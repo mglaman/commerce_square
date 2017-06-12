@@ -6,6 +6,6 @@
     "license": "GPL-2.0+",
     "require": {
         "drupal/commerce": "^2.0",
-        "square/connect": "^2.0"
+        "square/connect": "~2.1.0"
     }
 }

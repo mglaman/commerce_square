@@ -6,10 +6,6 @@ use Drupal\Component\Datetime\TimeInterface;
 use Drupal\commerce_payment\Exception\HardDeclineException;
 use Drupal\commerce_price\Price;
 use Drupal\commerce_square\ErrorHelper;
-use Drupal\Component\Serialization\Json;
-use SquareConnect\Api\LocationApi;
-use SquareConnect\Api\RefundApi;
-use SquareConnect\Api\TransactionApi;
 use Drupal\commerce_payment\Entity\PaymentInterface;
 use Drupal\commerce_payment\Entity\PaymentMethodInterface;
 use Drupal\commerce_payment\PaymentMethodTypeManager;
@@ -17,8 +13,11 @@ use Drupal\commerce_payment\PaymentTypeManager;
 use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\OnsitePaymentGatewayBase;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\FormStateInterface;
+use SquareConnect\Api\LocationsApi;
+use SquareConnect\Api\TransactionsApi;
 use SquareConnect\ApiClient;
 use SquareConnect\ApiException;
+use SquareConnect\Configuration;
 use SquareConnect\Model\ChargeRequest;
 use SquareConnect\Model\CreateRefundRequest;
 use SquareConnect\Model\Money;
@@ -27,7 +26,6 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\Component\Utility\NestedArray;
 use Drupal\Core\Url;
 use Drupal\Core\Routing\TrustedRedirectResponse;
-use Psr\Http\Message\ResponseInterface;
 
 /**
  * Provides the Square payment gateway.
@@ -49,8 +47,6 @@ use Psr\Http\Message\ResponseInterface;
 class Square extends OnsitePaymentGatewayBase implements SquareInterface {
 
   protected $time;
-  protected $transactionApi;
-  protected $refundApi;
 
   /**
    * {@inheritdoc}
@@ -58,8 +54,6 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
   public function __construct(array $configuration, $plugin_id, $plugin_definition, EntityTypeManagerInterface $entity_type_manager, PaymentTypeManager $payment_type_manager, PaymentMethodTypeManager $payment_method_type_manager, TimeInterface $time) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $entity_type_manager, $payment_type_manager, $payment_method_type_manager);
     $this->time = $time;
-    $this->transactionApi = new TransactionApi();
-    $this->refundApi = new RefundApi();
     $this->pluginDefinition['modes']['test'] = $this->t('Sandbox');
     $this->pluginDefinition['modes']['live'] = $this->t('Production');
   }
@@ -102,6 +96,34 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
   public function buildConfigurationForm(array $form, FormStateInterface $form_state) {
     $form = parent::buildConfigurationForm($form, $form_state);
 
+    $app_id = $this->configuration['live_app_id'];
+    $app_secret = $this->configuration['app_secret'];
+    if (empty($this->configuration['live_access_token'])) {
+      $code = \Drupal::request()->query->get('code');
+      if (!empty($code) && !empty($app_id) && !empty($app_secret)) {
+        $form['help'] = [
+          '#markup' => $this->t('Second step of payment gateway creation: please select production Location.'),
+          '#weight' => -10,
+        ];
+        $client = \Drupal::httpClient();
+        // We can send this request only once to square.
+        $response = $client->post('https://connect.squareup.com/oauth2/token', [
+          'json' => [
+            'client_id' => $app_id,
+            'client_secret' => $app_secret,
+            'code' => $code,
+          ],
+        ]);
+        $this->processTokenResponse($response);
+      }
+      else {
+        $form['help'] = [
+          '#markup' => $this->t('First step of payment gateway creation. After clicking save you will be redirected to Square to retrieve a token, then redirected back here to finish the payment gateway creation and select a Location.'),
+          '#weight' => -10,
+        ];
+      }
+    }
+
     $form['app_name'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Application Name'),
@@ -141,34 +163,6 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
       '#weight' => 10,
     ];
 
-    $code = \Drupal::request()->query->get('code');
-    $app_id = $this->configuration['live_app_id'];
-    $app_secret = $this->configuration['app_secret'];
-    if (empty($this->configuration['live_access_token'])) {
-      if (!empty($code) && !empty($app_id) && !empty($app_secret)) {
-        $form['help'] = [
-          '#markup' => $this->t('Second step of payment gateway creation: please select production Location.'),
-          '#weight' => -10,
-        ];
-        $client = \Drupal::httpClient();
-        // We can send this request only once to square.
-        $response = $client->post('https://connect.squareup.com/oauth2/token', [
-          'json' => [
-            'client_id' => $app_id,
-            'client_secret' => $app_secret,
-            'code' =>  $code,
-          ],
-        ]);
-        $this->processTokenResponse($response);
-      }
-      else {
-        $form['help'] = [
-          '#markup' => $this->t('First step of payment gateway creation. After clicking save you will be redirected to Square to retrieve a token, then redirected back here to finish the payment gateway creation and select a Location.'),
-          '#weight' => -10,
-        ];
-      }
-    }
-
     foreach ($this->getSupportedModes() as $mode => $object) {
       $form[$mode]['app_id'] = [
         '#type' => 'textfield',
@@ -182,17 +176,24 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
         '#attributes' => ['id' => 'square-' . $mode . '-location-wrapper'],
         '#weight' => 20,
       ];
-      $values = $form_state->getValues();
-      $access_token = NestedArray::getValue($values, $form['#parents'])[$mode]['access_token'];
+
+      $values = NestedArray::getValue($form_state->getUserInput(), $form['#parents']);
+      $access_token = $values[$mode]['access_token'];
       if (empty($access_token)) {
-        $access_token = $this->configuration[$mode . '_access_token'];
+        $values = NestedArray::getValue($form_state->getValues(), $form['#parents']);
+        $access_token = $values[$mode]['access_token'];
+        if (empty($access_token)) {
+          $access_token = $this->configuration[$mode . '_access_token'];
+        }
       }
       $location_markup = TRUE;
       if (!empty($access_token)) {
-        $location_api = new LocationApi();
+        $config = new Configuration();
+        $config->setAccessToken($access_token);
+        $location_api = new LocationsApi(new ApiClient($config));
         try {
           $this->renewAccessToken();
-          $locations = $location_api->listLocations($access_token);
+          $locations = $location_api->listLocations();
           if (!empty($locations)) {
             $location_options = $locations->getLocations();
             $options = [];
@@ -211,6 +212,7 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
           }
         }
         catch (\Exception $e) {
+          drupal_set_message($e->getMessage(), 'error');
         }
       }
       if ($location_markup && 'test' === $mode) {
@@ -225,7 +227,7 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
   /**
    * AJAX callback for the configuration form.
    */
-  public function locationsAjax(array &$form, FormStateInterface $form_state) {
+  public static function locationsAjax(array &$form, FormStateInterface $form_state) {
     $triggering_element = $form_state->getTriggeringElement();
     $parents = $triggering_element['#parents'];
     array_pop($parents);
@@ -257,30 +259,6 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
       $gateway->save();
     }
   }
-
-  /**
-   * Renew an access token if it has expired.
-   */
-  public function renewAccessToken() {
-    if (empty($this->configuration['live_app_id']) || empty($this->configuration['live_access_token'])) {
-      return;
-    }
-    if (!empty($this->configuration['live_access_token_expiry']) && $this->configuration['live_access_token_expiry'] < \Drupal::time()->getRequestTime()) {
-      $client = \Drupal::httpClient();
-      // We can send this request only once to square.
-      try {
-        $response = $client->post('https://connect.squareup.com/oauth2/clients/' . $this->configuration['live_app_id'] . '/access-token/renew', [
-          'json' => [
-            'access_token' => $this->configuration['live_access_token'],
-          ],
-        ]);
-      }
-      catch (\Exception $e) {
-        throw ErrorHelper::convertException($e);
-      }
-      $this->processTokenResponse($response);
-    }
- }
 
   /**
    * {@inheritdoc}
@@ -336,6 +314,39 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
   /**
    * {@inheritdoc}
    */
+  public function getApiClient() {
+    $config = new Configuration();
+    $config->setAccessToken($this->configuration[$this->getMode() . '_access_token']);
+    return new ApiClient($config);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function renewAccessToken() {
+    if (empty($this->configuration['live_app_id']) || empty($this->configuration['live_access_token'])) {
+      return;
+    }
+    if (!empty($this->configuration['live_access_token_expiry']) && $this->configuration['live_access_token_expiry'] < \Drupal::time()->getRequestTime()) {
+      $client = \Drupal::httpClient();
+      // We can send this request only once to square.
+      try {
+        $response = $client->post('https://connect.squareup.com/oauth2/clients/' . $this->configuration['live_app_id'] . '/access-token/renew', [
+          'json' => [
+            'access_token' => $this->configuration['live_access_token'],
+          ],
+        ]);
+      }
+      catch (\Exception $e) {
+        throw ErrorHelper::convertException($e);
+      }
+      $this->processTokenResponse($response);
+    }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function createPayment(PaymentInterface $payment, $capture = TRUE) {
     if ($payment->getState()->value != 'new') {
       throw new \InvalidArgumentException('The provided payment is in an invalid state.');
@@ -367,7 +378,7 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     $mode = $this->getMode();
     // Since the SDK does not support `integration_id`, we must call it direct.
     try {
-      $api_client = $this->transactionApi->getApiClient();
+      $api_client = $this->getApiClient();
       $resourcePath = "/v2/locations/{location_id}/transactions";
       $queryParams = [];
       $headerParams = [];
@@ -495,8 +506,8 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
 
     $mode = $this->getMode();
     try {
-      $result = $this->transactionApi->captureTransaction(
-        $this->configuration[$mode . '_access_token'],
+      $transaction_api = new TransactionsApi($this->getApiClient());
+      $result = $transaction_api->captureTransaction(
         $this->configuration[$mode . '_location_id'],
         $transaction_id
       );
@@ -519,8 +530,8 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     list($transaction_id, $tender_id) = explode('|', $payment->getRemoteId());
     $mode = $this->getMode();
     try {
-      $result = $this->transactionApi->voidTransaction(
-        $this->configuration[$mode . '_access_token'],
+      $transaction_api = new TransactionsApi($this->getApiClient());
+      $result = $transaction_api->voidTransaction(
         $this->configuration[$mode . '_location_id'],
         $transaction_id
       );
@@ -555,8 +566,8 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
 
     $mode = $this->getMode();
     try {
-      $result = $this->refundApi->createRefund(
-        $this->configuration[$mode . '_access_token'],
+      $transaction_api = new TransactionsApi($this->getApiClient());
+      $result = $transaction_api->createRefund(
         $this->configuration[$mode . '_location_id'],
         $transaction_id,
         $refund_request

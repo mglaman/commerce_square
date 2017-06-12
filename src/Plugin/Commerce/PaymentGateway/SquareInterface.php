@@ -11,4 +11,17 @@ use Drupal\commerce_payment\Plugin\Commerce\PaymentGateway\SupportsRefundsInterf
  */
 interface SquareInterface extends OnsitePaymentGatewayInterface, SupportsAuthorizationsInterface, SupportsRefundsInterface {
 
+  /**
+   * Gets a configured API client.
+   *
+   * @return \SquareConnect\ApiClient
+   *   The API client.
+   */
+  public function getApiClient();
+
+  /**
+   * Renew an access token if it has expired.
+   */
+  public function renewAccessToken();
+
 }
