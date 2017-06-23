@@ -8,6 +8,7 @@ use Drupal\commerce_payment\Entity\PaymentGateway;
 use Drupal\commerce_payment\Entity\PaymentMethod;
 use Drupal\commerce_price\Price;
 use Drupal\commerce_square\Plugin\Commerce\PaymentGateway\Square;
+use Drupal\profile\Entity\Profile;
 use Drupal\Tests\commerce\Kernel\CommerceKernelTestBase;
 use SquareConnect\ApiClient;
 
@@ -176,6 +177,22 @@ class SquareApiIntegrationTest extends CommerceKernelTestBase {
     ]);
     $order->save();
 
+    /** @var \Drupal\profile\Entity\ProfileInterface $profile */
+    $profile = Profile::create([
+      'type' => 'customer',
+      'address' => [
+        'country_code' => 'US',
+        'postal_code' => '53177',
+        'locality' => 'Milwaukee',
+        'address_line1' => 'Pabst Blue Ribbon Dr',
+        'administrative_area' => 'WI',
+        'given_name' => 'Frederick',
+        'family_name' => 'Pabst',
+      ],
+      'uid' => $user->id(),
+    ]);
+    $profile->save();
+
     /** @var \Drupal\commerce_payment\Entity\PaymentMethodInterface $payment_method */
     $payment_method = PaymentMethod::create([
       'type' => 'credit_card',
@@ -185,6 +202,7 @@ class SquareApiIntegrationTest extends CommerceKernelTestBase {
       'uid' => $user->id(),
       'remote_id' => $nonce,
     ]);
+    $payment_method->setBillingProfile($profile);
     $payment_method->save();
 
     $payment = Payment::create([

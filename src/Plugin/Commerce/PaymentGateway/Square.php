@@ -18,6 +18,7 @@ use SquareConnect\Api\TransactionsApi;
 use SquareConnect\ApiClient;
 use SquareConnect\ApiException;
 use SquareConnect\Configuration;
+use SquareConnect\Model\Address;
 use SquareConnect\Model\ChargeRequest;
 use SquareConnect\Model\CreateRefundRequest;
 use SquareConnect\Model\Money;
@@ -364,6 +365,10 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     // @see https://docs.connect.squareup.com/api/connect/v2/#workingwithmonetaryamounts
     $amount = $amount->multiply('100');
 
+    $billing = $payment_method->getBillingProfile();
+    /** @var \Drupal\address\Plugin\Field\FieldType\AddressItem $address */
+    $address = $billing->get('address')->first();
+
     $charge_request = new ChargeRequest();
     $charge_request->setAmountMoney(new Money([
       'amount' => (int) $amount->getNumber(),
@@ -374,6 +379,18 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     $charge_request->setCardNonce($payment_method->getRemoteId());
     $charge_request->setIdempotencyKey(uniqid());
     $charge_request->setBuyerEmailAddress($payment->getOrder()->getEmail());
+    $charge_request->setBillingAddress(new Address([
+      'address_line_1' => $address->getAddressLine1(),
+      'address_line_2' => $address->getAddressLine2(),
+      'locality' => $address->getLocality(),
+      'sublocality' => $address->getDependentLocality(),
+      'administrative_district_level_1' => $address->getAdministrativeArea(),
+      'postal_code' => $address->getPostalCode(),
+      'country' => $address->getCountryCode(),
+      'first_name' => $address->getGivenName(),
+      'last_name' => $address->getFamilyName(),
+      'organization' => $address->getOrganization(),
+    ]));
 
     $mode = $this->getMode();
     // Since the SDK does not support `integration_id`, we must call it direct.
