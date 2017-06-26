@@ -2,6 +2,8 @@
 
 namespace Drupal\Tests\commerce_square\FunctionalJavascript;
 
+use Drupal\Component\Render\FormattableMarkup;
+use Drupal\Core\Url;
 use Drupal\FunctionalJavascriptTests\JSWebAssert;
 use Drupal\Tests\commerce\Functional\CommerceBrowserTestBase;
 use Drupal\Tests\commerce\FunctionalJavascript\JavascriptTestTrait;
@@ -38,30 +40,33 @@ class ConfigureGatewayTest extends CommerceBrowserTestBase {
    * Tests that a Square gateway can be configured.
    */
   public function testCreateSquareGateway() {
-    $this->drupalGet('admin/commerce/config/payment-gateways');
-    $this->getSession()->getPage()->clickLink('Add payment gateway');
-    $this->assertSession()->addressEquals('admin/commerce/config/payment-gateways/add');
+    $this->drupalGet(Url::fromRoute('commerce_square.settings')->toString());
 
+    $this->getSession()->getPage()->fillField('Application Secret', 'fluff');
+    $this->getSession()->getPage()->fillField('Application Name', 'Drupal Commerce 2 Demo');
+    $this->getSession()->getPage()->fillField('Application ID', 'sq0idp-nV_lBSwvmfIEF62s09z0-Q');
+    $this->getSession()->getPage()->fillField('Sandbox Application ID', 'sandbox-sq0idp-nV_lBSwvmfIEF62s09z0-Q');
+    $this->getSession()->getPage()->fillField('Sandbox Access Token', 'sandbox-sq0atb-uEZtx4_Qu36ff-kBTojVNw');
+    $this->getSession()->getPage()->pressButton('Save configuration');
+
+    $is_squareup = strpos($this->getSession()->getCurrentUrl(), 'squareup.com');
+    $this->assertTrue($is_squareup !== FALSE);
+
+    $this->drupalGet('admin/commerce/config/payment-gateways/add');
     $this->getSession()->getPage()->fillField('Name', 'Square');
     $this->getSession()->getPage()->checkField('Square');
     $this->assertSession()->assertWaitOnAjaxRequest();
     $this->getSession()->getPage()->fillField('id', 'square');
-
-    $this->getSession()->getPage()->fillField('configuration[app_name]', 'Drupal Commerce 2 Demo');
-    $this->getSession()->getPage()->fillField('configuration[app_secret]', 'fluff');
-
-
-    $this->getSession()->getPage()->fillField('configuration[test][app_id]', 'sandbox-sq0idp-nV_lBSwvmfIEF62s09z0-Q');
-    $this->getSession()->getPage()->fillField('configuration[test][access_token]', 'sandbox-sq0atb-uEZtx4_Qu36ff-kBTojVNw');
-    $this->assertSession()->assertWaitOnAjaxRequest();
-    $this->assertSession()->fieldExists('configuration[test][location_wrapper][location_id]');
-    $this->getSession()->getPage()->selectFieldOption('configuration[test][location_wrapper][location_id]', 'CBASEHEnLmDB5kndjDx8AMlxPKAgAQ');
-
-    $this->getSession()->getPage()->fillField('configuration[live][app_id]', 'sq0idp-nV_lBSwvmfIEF62s09z0-Q');
+    $this->getSession()->getPage()->checkField('Sandbox');
+    $this->getSession()->getPage()->fillField('configuration[test][test_location_id]', 'CBASEGmzMStUzri2iDAveKJhcd8gAQ');
+    $this->assertSession()->fieldDisabled('configuration[live][live_location_id]');
     $this->getSession()->getPage()->pressButton('Save');
+    $this->assertSession()->responseContains(new FormattableMarkup('Saved the %label payment gateway.', ['%label' => 'Square']));
 
-    $is_squareup = strpos($this->getSession()->getCurrentUrl(), 'squareup.com');
-    $this->assertTrue($is_squareup !== FALSE);
+    $this->drupalGet('admin/commerce/config/payment-gateways/manage/square');
+    $this->getSession()->getPage()->checkField('Production');
+    $this->getSession()->getPage()->pressButton('Save');
+    $this->assertSession()->pageTextContains('You must select a location for the configured mode.');
   }
 
   /**

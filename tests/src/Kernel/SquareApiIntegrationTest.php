@@ -49,6 +49,12 @@ class SquareApiIntegrationTest extends CommerceKernelTestBase {
     $this->installConfig('commerce_order');
     $this->installConfig('commerce_payment');
 
+    $this->container->get('config.factory')
+      ->getEditable('commerce_square.settings')
+      ->set('sandbox_app_id', 'sandbox-sq0idp-nV_lBSwvmfIEF62s09z0-Q')
+      ->set('sandbox_access_token', 'sandbox-sq0atb-uEZtx4_Qu36ff-kBTojVNw')
+      ->save();
+
     /** @var \Drupal\commerce_payment\Entity\PaymentGateway $gateway */
     $gateway = PaymentGateway::create([
       'id' => 'square_connect',
@@ -56,9 +62,7 @@ class SquareApiIntegrationTest extends CommerceKernelTestBase {
       'plugin' => 'square',
     ]);
     $gateway->getPlugin()->setConfiguration([
-      'test_app_id' => 'sandbox-sq0idp-nV_lBSwvmfIEF62s09z0-Q',
       'test_location_id' => 'CBASEHEnLmDB5kndjDx8AMlxPKAgAQ',
-      'test_access_token' => 'sandbox-sq0atb-uEZtx4_Qu36ff-kBTojVNw',
       'mode' => 'test',
       'payment_method_types' => ['credit_card'],
     ]);

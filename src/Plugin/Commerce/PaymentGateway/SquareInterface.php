@@ -19,9 +19,4 @@ interface SquareInterface extends OnsitePaymentGatewayInterface, SupportsAuthori
    */
   public function getApiClient();
 
-  /**
-   * Renew an access token if it has expired.
-   */
-  public function renewAccessToken();
-
 }

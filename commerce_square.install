@@ -1,0 +1,39 @@
+<?php
+
+/**
+ * @file
+ * Provides install and update hooks for Commerce Square.
+ */
+
+/**
+ * Migrates gateway settings into new configuration object.
+ */
+function commerce_square_update_8001() {
+  $config_factory = \Drupal::configFactory();
+  $gateway_storage = \Drupal::entityTypeManager()->getStorage('commerce_payment_gateway');
+  /** @var \Drupal\commerce_payment\Entity\PaymentGatewayInterface[] $gateways */
+  $gateways = $gateway_storage->loadByProperties(['plugin' => 'square']);
+  foreach ($gateways as $gateway) {
+    $configuration = $gateway->getPlugin()->getConfiguration();
+
+    $config = $config_factory->getEditable('commerce_square.settings');
+    $config
+      ->set('app_name', $configuration['app_name'])
+      ->set('app_secret', $configuration['app_secret'])
+      ->set('sandbox_app_id', $configuration['test_app_id'])
+      ->set('sandbox_access_token', $configuration['test_access_token'])
+      ->set('production_app_id', $configuration['live_app_id'])
+      ->set('production_access_token', $configuration['live_access_token'])
+      ->set('production_access_token_expiry', $configuration['live_access_token_expiry']);
+    $config->save();
+
+    unset($configuration['app_name']);
+    unset($configuration['app_secret']);
+    unset($configuration['test_app_id']);
+    unset($configuration['test_access_token']);
+    unset($configuration['live_app_id']);
+    unset($configuration['live_access_token']);
+    unset($configuration['live_access_token_expiry']);
+  }
+
+}

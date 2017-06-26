@@ -5,20 +5,52 @@
  * commerce_square module file.
  */
 
+use Drupal\Component\Serialization\Json;
+use GuzzleHttp\Exception\ClientException;
+use SquareConnect\ApiException;
+
 /**
  * Implements hook_cron().
  */
 function commerce_square_cron() {
-  // Renew square token ids.
-  $gateway_ids = \Drupal::entityQuery('commerce_payment_gateway')
-    ->execute();
-  $controller = \Drupal::entityTypeManager()->getStorage('commerce_payment_gateway');
-  foreach ($gateway_ids as $gateway_id) {
-    $gateway =  $controller->load($gateway_id);
-    /** @var $plugin Drupal\commerce_square\Plugin\Commerce\PaymentGateway\Square */
-    $plugin = $gateway->getPlugin();
-    if ($plugin->getPluginId() == 'square') {
-      $plugin->renewAccessToken();
+  $logger = \Drupal::logger('commerce_square');
+  $config = \Drupal::configFactory()->getEditable('commerce_square.settings');
+
+  if (empty($config->get('production_access_token'))) {
+    \Drupal::logger('commerce_square')->debug('No access token, skipping');
+    return;
+  }
+
+  $access_token_expiry = $config->get('production_access_token_expiry');
+  if (!empty($access_token_expiry)) {
+    $client = \Drupal::httpClient();
+    // We can send this request only once to square.
+    try {
+      $response = $client->post('https://connect.squareup.com/oauth2/clients/' . $config->get('production_app_id') . '/access-token/renew', [
+        'json' => [
+          'access_token' => $config->get('production_access_token'),
+        ],
+        'headers' => [
+          'Authorization' => 'Client ' . $config->get('app_secret'),
+          'Accept' => 'application/json',
+        ],
+      ]);
+      $response_body = Json::decode($response->getBody());
+      $logger->debug(Json::encode($response_body));
+      if (!empty($response_body['access_token'])) {
+        $config->set('production_access_token', $response_body['access_token']);
+        $config->set('production_access_token_expiry', strtotime($response_body['expires_at']));
+        $config->save();
+      }
+    }
+    catch (ApiException $e) {
+      $logger->error(t('Error when renewing access token: :s', [':s' => $e->getMessage()]));
+    }
+    catch (ClientException $e) {
+      $logger->error(t('Error when renewing access token: :s', [':s' => $e->getMessage()]));
+    }
+    catch (\Exception $e) {
+      $logger->error(t('Error when renewing access token: :s', [':s' => $e->getMessage()]));
     }
   }
 }

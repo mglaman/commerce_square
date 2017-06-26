@@ -18,17 +18,18 @@ class OauthToken extends ControllerBase {
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The request object.
+   *
+   * @return \Symfony\Component\HttpFoundation\RedirectResponse
+   *   The response.
    */
   public function obtain(Request $request) {
-    $gateway_id = explode(' ', $request->query->get('state'))[1];
     $code = $request->query->get('code');
     $options = [
       'query' => [
         'code' => $code,
       ],
     ];
-    $route_parameters = ['commerce_payment_gateway' => $gateway_id];
-    return new RedirectResponse(Url::fromRoute('entity.commerce_payment_gateway.edit_form', $route_parameters, $options)->toString());
+    return new RedirectResponse(Url::fromRoute('commerce_square.settings', [], $options)->toString());
   }
 
   /**
@@ -40,8 +41,7 @@ class OauthToken extends ControllerBase {
   public function obtainAccess() {
     // $request is not passed in to _custom_access.
     // @see https://www.drupal.org/node/2786941
-    $token = explode(' ', \Drupal::request()->query->get('state'))[0];
-    if (\Drupal::csrfToken()->validate($token)) {
+    if (\Drupal::csrfToken()->validate(\Drupal::request()->query->get('state'))) {
       return AccessResult::allowed();
     }
     return AccessResult::forbidden($this->t('Invalid token'));
