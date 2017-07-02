@@ -6,6 +6,23 @@
  */
 
 /**
+ * Implements hook_requirements().
+ */
+function commerce_square_requirements($phase) {
+  $requirements = [];
+  if ($phase == 'install') {
+    if (!class_exists('\SquareConnect\ApiClient')) {
+      $requirements['commerce_square_library'] = [
+        'description' => t('Commerce Square requires the square/connect library.'),
+        'severity' => REQUIREMENT_ERROR,
+      ];
+    }
+  }
+
+  return $requirements;
+}
+
+/**
  * Migrates gateway settings into new configuration object.
  */
 function commerce_square_update_8001() {
