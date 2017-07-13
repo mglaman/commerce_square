@@ -47,15 +47,13 @@ use Drupal\Core\Url;
  */
 class Square extends OnsitePaymentGatewayBase implements SquareInterface {
 
-  protected $time;
   protected $squareSettings;
 
   /**
    * {@inheritdoc}
    */
   public function __construct(array $configuration, $plugin_id, $plugin_definition, EntityTypeManagerInterface $entity_type_manager, PaymentTypeManager $payment_type_manager, PaymentMethodTypeManager $payment_method_type_manager, TimeInterface $time, ConfigFactoryInterface $config_factory) {
-    parent::__construct($configuration, $plugin_id, $plugin_definition, $entity_type_manager, $payment_type_manager, $payment_method_type_manager);
-    $this->time = $time;
+    parent::__construct($configuration, $plugin_id, $plugin_definition, $entity_type_manager, $payment_type_manager, $payment_method_type_manager, $time);
     $this->pluginDefinition['modes']['test'] = $this->t('Sandbox');
     $this->pluginDefinition['modes']['live'] = $this->t('Production');
     $this->squareSettings = $config_factory->get('commerce_square.settings');
@@ -185,16 +183,10 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
    * {@inheritdoc}
    */
   public function createPayment(PaymentInterface $payment, $capture = TRUE) {
-    if ($payment->getState()->value != 'new') {
-      throw new \InvalidArgumentException('The provided payment is in an invalid state.');
-    }
+    $this->assertPaymentState($payment, ['new']);
     $payment_method = $payment->getPaymentMethod();
-    if (empty($payment_method)) {
-      throw new \InvalidArgumentException('The provided payment has no payment method referenced.');
-    }
-    if ($this->time->getRequestTime() >= $payment_method->getExpiresTime()) {
-      throw new HardDeclineException('The provided payment method has expired');
-    }
+    $this->assertPaymentMethod($payment_method);
+
     $amount = $payment->getAmount();
     $amount = \Drupal::getContainer()->get('commerce_price.rounder')->round($amount);
     // Square only accepts integers and not floats.
@@ -292,16 +284,16 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     $transaction = $result->getTransaction();
     $tender = $transaction->getTenders()[0];
 
-    $payment->state = $capture ? 'capture_completed' : 'authorization';
+    $next_state = $capture ? 'completed' : 'authorization';
+    $payment->setState($next_state);
     $payment->setRemoteId($transaction->getId() . '|' . $tender->getId());
     $payment->setAuthorizedTime($transaction->getCreatedAt());
-    // @todo Find out how long an authorization is valid, set its expiration.
     if ($capture) {
-      $payment->setCapturedTime($result->getTransaction()->getCreatedAt());
+      $payment->setCompletedTime($result->getTransaction()->getCreatedAt());
     }
     else {
       $expires = $this->time->getRequestTime() + (3600 * 24 * 6) - 5;
-      $payment->setAuthorizationExpiresTime($expires);
+      $payment->setExpiresTime($expires);
     }
     $payment->save();
   }
@@ -350,6 +342,8 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
    * {@inheritdoc}
    */
   public function capturePayment(PaymentInterface $payment, Price $amount = NULL) {
+    $this->assertPaymentState($payment, ['authorization']);
+
     $amount = $amount ?: $payment->getAmount();
     // Square only accepts integers and not floats.
     // @see https://docs.connect.squareup.com/api/connect/v2/#workingwithmonetaryamounts
@@ -367,9 +361,9 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
       throw ErrorHelper::convertException($e);
     }
 
-    $payment->state = 'capture_completed';
+    $payment->setState('completed');
     $payment->setAmount($amount);
-    $payment->setCapturedTime($this->time->getRequestTime());
+    $payment->setCompletedTime($this->time->getRequestTime());
     $payment->save();
 
   }
@@ -378,6 +372,8 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
    * {@inheritdoc}
    */
   public function voidPayment(PaymentInterface $payment) {
+    $this->assertPaymentState($payment, ['authorization']);
+
     list($transaction_id, $tender_id) = explode('|', $payment->getRemoteId());
     $mode = $this->getMode();
     try {
@@ -390,7 +386,7 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     catch (ApiException $e) {
       throw ErrorHelper::convertException($e);
     }
-    $payment->state = 'authorization_voided';
+    $payment->setState('authorization_voided');
     $payment->save();
   }
 
@@ -398,6 +394,8 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
    * {@inheritdoc}
    */
   public function refundPayment(PaymentInterface $payment, Price $amount = NULL) {
+    $this->assertPaymentState($payment, ['completed', 'partially_refunded']);
+
     $amount = $amount ?: $payment->getAmount();
     // Square only accepts integers and not floats.
     // @see https://docs.connect.squareup.com/api/connect/v2/#workingwithmonetaryamounts
@@ -431,11 +429,12 @@ class Square extends OnsitePaymentGatewayBase implements SquareInterface {
     $old_refunded_amount = $payment->getRefundedAmount();
     $new_refunded_amount = $old_refunded_amount->add($amount);
     if ($new_refunded_amount->lessThan($payment->getAmount())) {
-      $payment->state = 'capture_partially_refunded';
+      $payment->setState('partially_refunded');
     }
     else {
-      $payment->state = 'capture_refunded';
+      $payment->setState('refunded');
     }
+
 
     $payment->setRefundedAmount($new_refunded_amount);
     $payment->save();

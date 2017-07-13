@@ -58,8 +58,8 @@ class ConfigureGatewayTest extends CommerceBrowserTestBase {
     $this->assertSession()->assertWaitOnAjaxRequest();
     $this->getSession()->getPage()->fillField('id', 'square');
     $this->getSession()->getPage()->checkField('Sandbox');
-    $this->getSession()->getPage()->fillField('configuration[test][test_location_id]', 'CBASEGmzMStUzri2iDAveKJhcd8gAQ');
-    $this->assertSession()->fieldDisabled('configuration[live][live_location_id]');
+    $this->getSession()->getPage()->fillField('configuration[square][test][test_location_id]', 'CBASEGmzMStUzri2iDAveKJhcd8gAQ');
+    $this->assertSession()->fieldDisabled('configuration[square][live][live_location_id]');
     $this->getSession()->getPage()->pressButton('Save');
     $this->assertSession()->responseContains(new FormattableMarkup('Saved the %label payment gateway.', ['%label' => 'Square']));
 

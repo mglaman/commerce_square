@@ -17,11 +17,12 @@ class PaymentMethodAddForm extends BasePaymentMethodAddForm {
     /** @var \Drupal\commerce_square\Plugin\Commerce\PaymentGateway\Square $plugin */
     $plugin = $this->plugin;
     $configuration = $plugin->getConfiguration();
+    $config = \Drupal::config('commerce_square.settings');
+    $api_mode = ($configuration['mode'] == 'test') ? 'sandbox' : 'production';
 
-    $mode = $configuration['mode'];
     $element['#attached']['library'][] = 'commerce_square/form';
     $element['#attached']['drupalSettings']['commerceSquare'] = [
-      'applicationId' => $configuration[$mode . '_app_id'],
+      'applicationId' => $config->get($api_mode . '_app_id'),
       'drupalSelector' => 'edit-' . str_replace('_', '-', implode('-', $element['#parents'])),
     ];
     $element['#attributes']['class'][] = 'square-form';
