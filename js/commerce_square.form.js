@@ -20,29 +20,33 @@
    */
   Drupal.behaviors.commerceSquareForm = {
     attach: function (context) {
-      var $squareForm = $(context).find('.square-form').once();
-      if ($squareForm.length) {
-        commerceSquare = $squareForm.data('square');
-        if (!commerceSquare) {
-          try {
-            commerceSquare = new Drupal.commerceSquare($squareForm, drupalSettings.commerceSquare);
-            $squareForm.data('square', commerceSquare);
-          }
-          catch (e) {
-            alert(e.message);
-          }
-        }
+      var $form = $('.square-form', context).closest('form').once('square-attach');
+      if ($form.length === 0) {
+        return;
       }
+      var waitForSdk = setInterval(function () {
+        if (typeof SqPaymentForm !== 'undefined') {
+          commerceSquare = new Drupal.commerceSquare($form, drupalSettings.commerceSquare);
+          $form.data('square', commerceSquare);
+          clearInterval(waitForSdk);
+        }
+      }, 100);
     },
-    detach: function (context) {
-      var $squareForm = $(context).find('.square-form').once();
-      if ($squareForm.length > 0) {
-        commerceSquare = $squareForm.data('square');
-        if (commerceSquare) {
-          commerceSquare.removeData('square');
-          $squareForm.closest('form').find('[name="op"]').prop('disabled', false);
-        }
+    detach: function (context, settings, trigger) {
+      // Detaching on the wrong trigger will clear the Square form
+      // on #ajax (after changing the address country, for example).
+      if (trigger !== 'unload') {
+        return;
       }
+      var $form = $('.square-form', context).closest('form');
+      if ($form.length === 0) {
+        return;
+      }
+
+      $form.closest('form').find('[name="op"]').prop('disabled', false);
+      $form.removeData('square');
+      $form.removeOnce('square-attach');
+
     }
   };
 
