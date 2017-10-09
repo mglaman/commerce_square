@@ -1,6 +1,11 @@
-commerce_square.settings:
-  title: 'Square settings'
-  route_name: 'commerce_square.settings'
+commerce_square.configuration:
+  title: 'Square configuration'
+  route_name: 'commerce_square.configuration'
   parent: 'commerce.configuration'
   description: 'Configure your Square settings.'
-  weight: 20
+
+commerce_square.application_settings:
+  title: 'Application settings'
+  route_name: 'commerce_square.application_settings'
+  parent: 'commerce_square.configuration'
+  description: 'Configure your Square application settings.'

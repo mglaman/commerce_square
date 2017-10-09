@@ -5,10 +5,19 @@ commerce_square.oauth.obtain:
     _title: 'Obtain Merchant Token'
   requirements:
     _custom_access: '\Drupal\commerce_square\Controller\OauthToken::obtainAccess'
-commerce_square.settings:
+
+commerce_square.configuration:
   path: '/admin/commerce/config/square'
   defaults:
+    _controller: '\Drupal\system\Controller\SystemController::systemAdminMenuBlockPage'
+    _title: 'Square'
+  requirements:
+    _permission: 'access commerce administration pages'
+
+commerce_square.application_settings:
+  path: '/admin/commerce/config/square/settings'
+  defaults:
     _form: '\Drupal\commerce_square\Form\SquareSettings'
-    _title: 'Square settings'
+    _title: 'Application settings'
   requirements:
     _permission: 'access commerce administration pages'

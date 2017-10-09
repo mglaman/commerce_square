@@ -40,7 +40,7 @@ class ConfigureGatewayTest extends CommerceBrowserTestBase {
    * Tests that a Square gateway can be configured.
    */
   public function testCreateSquareGateway() {
-    $this->drupalGet(Url::fromRoute('commerce_square.settings')->toString());
+    $this->drupalGet(Url::fromRoute('commerce_square.application_settings')->toString());
 
     $this->getSession()->getPage()->fillField('Application Secret', 'fluff');
     $this->getSession()->getPage()->fillField('Application Name', 'Drupal Commerce 2 Demo');
